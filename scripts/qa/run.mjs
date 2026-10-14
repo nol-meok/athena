@@ -46,7 +46,7 @@ import { captureTracking, blockThirdParty, eventsSince, HIDE_EVENT_PANEL } from 
 import { createLiveLog, startScreencast } from './live.mjs'
 import { normalizeTarget, sessionFileOf, targetKey, checkServerUrl } from './targets.mjs'
 import { loadConfig } from '../lib/config.mjs'
-import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie } from './apps.mjs'
+import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie, packQaWarnings, routesWarnings } from './apps.mjs'
 
 const QA_DIR = dirname(fileURLToPath(import.meta.url))
 const HERMES = join(QA_DIR, '..', '..')
@@ -79,6 +79,8 @@ if (!qaApp || !routesConfig) {
     : `⚠️  ${appName} 은 QA 설정 전이다 — node scripts/qa/init-app.mjs --app ${appName} 로 scripts/qa/routes/${appName}.json 초안을 만든다`)
   process.exit(2)
 }
+// 옛 설정이 남아 있으면 한 줄씩 알리고 기본값으로 계속 돈다. 흐름·여러 세션의 자식 런(--group)은 맨 위가 이미 찍었다
+if (!option('group')) for (const line of [...packQaWarnings(CONFIG), ...routesWarnings(appName, routesConfig)]) console.log(`⚠️  ${line}`)
 // 로컬 서버 포트·띄우는 명령·준비 단계·로그인 쿠키 — routes/<앱>.json server
 const SERVER = serverSettings(routesConfig)
 const suite = flag('suite')

@@ -257,6 +257,7 @@
   /* 콤보박스 — 브라우저 기본(흰 바탕)이면 다크 모드에서 글자가 안 보인다. 현황판 색을 쓴다 */
   .qa-top select, .tc-filter select { font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); }
   .qa-top select option, .tc-filter select option { background: var(--panel); color: var(--text); }
+  .qa-warn { flex: 1 1 100%; margin: 0; font-size: 12px; color: var(--warn); }
   .qa-top input { font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); width: 260px; max-width: 100%; }
   .qa-steps { margin: 4px 0 0; padding-left: 18px; font-size: 11.5px; }
   .qa-steps .no { color: var(--bad); }
@@ -419,6 +420,7 @@
       <select id="qa-mode" aria-label="진행 방식" title="흐름 = 비로그인 → 로그인 상태 전부 차례로(예: login → verified, 세션이 없거나 만료면 그 차례에 로그인 창) → 실패 리포트"><option value="flow">🧭 흐름(모든 세션 차례로)</option><option value="single">한 세션만</option></select>
       <select id="qa-profile" aria-label="세션 프로필"></select>
       <button type="button" class="btn" id="qa-suite">전체 검수 시작</button>
+      <p class="qa-warn" id="qa-warn" hidden></p>
     </div>
     <div class="qa-wrap">
       <nav class="qa-runs" id="qa-runs" aria-label="QA 런"><div class="empty-history">불러오는 중이에요…</div></nav>
@@ -1027,8 +1029,13 @@
   };
   // [전체 검수] — 앱·세션 프로필 고르기
   let qaApps = [];
+  let qaPackWarnings = [];
   const loadQaApps = async () => {
-    try { qaApps = (await (await fetch('/api/qa/apps')).json()).apps || []; } catch (error) { qaApps = []; }
+    try {
+      const listed = await (await fetch('/api/qa/apps')).json();
+      qaApps = listed.apps || [];
+      qaPackWarnings = listed.warnings || [];
+    } catch (error) { qaApps = []; qaPackWarnings = []; }
     const appSelect = document.getElementById('qa-app');
     const current = appSelect.value;
     appSelect.innerHTML = qaApps.map((entry) => `<option value="${esc(entry.app)}">${esc(entry.app)} (흐름 씬 ${entry.scenarios})</option>`).join('') || '<option value="">설정된 앱 없음</option>';
@@ -1042,6 +1049,11 @@
     const modeSelect = document.getElementById('qa-mode');
     const fillProfiles = () => {
       const entry = qaApps.find((item) => item.app === appSelect.value);
+      // 옛 설정 경고(팩 qa.repo · routes server 블록 · tokenCookie) — 기본값으로 돌긴 하지만 알린다
+      const warnLines = [...qaPackWarnings, ...(entry?.warnings || [])];
+      const warnBox = document.getElementById('qa-warn');
+      warnBox.hidden = !warnLines.length;
+      warnBox.innerHTML = warnLines.map((line) => `⚠️ ${esc(line)}`).join('<br>');
       targetSelect.querySelector('[value="local"]').disabled = entry ? !entry.local : false;
       if (targetSelect.selectedOptions[0]?.disabled) targetSelect.value = 'server';
       const server = targetSelect.value === 'server';

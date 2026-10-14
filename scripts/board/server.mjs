@@ -45,7 +45,7 @@ import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './ar
 import { applyLearn, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
 import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
-import { listQaApps, findQaApp, appOfAgent, readRoutes, serverSettings, sessionToken } from '../qa/apps.mjs'
+import { listQaApps, findQaApp, appOfAgent, readRoutes, serverSettings, sessionToken, packQaWarnings, routesWarnings } from '../qa/apps.mjs'
 import { approveRun as approveQaRun } from '../qa/baseline.mjs'
 import { explainProblems } from '../qa/explain.mjs'
 import { createHash, randomBytes } from 'node:crypto'
@@ -1084,7 +1084,7 @@ function qaApps() {
       session: !settings.session || existsSync(join(ROOT, '.qa-auth', `${app}.${settings.session}.json`))
     }))
     const scenarioDir = join(ROOT, 'scripts', 'qa', 'scenarios', app)
-    return { app, label, profiles, devUrl: config.devUrl ?? null, local: config.local !== false, scenarios: existsSync(scenarioDir) ? readdirSync(scenarioDir).filter((file) => file.endsWith('.json')).length : 0 }
+    return { app, label, profiles, devUrl: config.devUrl ?? null, local: config.local !== false, scenarios: existsSync(scenarioDir) ? readdirSync(scenarioDir).filter((file) => file.endsWith('.json')).length : 0, warnings: routesWarnings(app, config) }
   })
 }
 // QA 로그인 세션 상태 — 고른 앱·대상(로컬·서버 주소)의 세션 프로필마다 있는지·만료 시각. 쿠키 값은 읽지 않고 로그인 토큰(routes server.tokenCookie)의 만료 시각만 본다
@@ -1371,7 +1371,7 @@ createServer(async (request, response) => {
   }
   if (url.pathname === '/api/qa/apps') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    return response.end(JSON.stringify({ apps: qaApps() }))
+    return response.end(JSON.stringify({ apps: qaApps(), warnings: packQaWarnings(config) }))
   }
   // QA 실시간 페이지(QA 자동화 도구 화면) — 화면·API 호출·트래킹 이벤트를 한 페이지에
   if (url.pathname === '/qa-live') {
