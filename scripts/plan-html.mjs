@@ -15,9 +15,10 @@
  * 만든 뒤 `scripts/board.sh open <md>` 로 현황판 주소로 연다.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { acquirePlanLock, releaseLock, writeAtomic } from './lib/plan-update.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -60,6 +61,11 @@ if (!existsSync(htmlPath) && !dataPath && !addPath) {
   console.error('⚠️  html 이 없다 — 처음 만들 때는 --data <PLAN.json> (리뷰 뒤 결정이면 --add <결정.json>) 이 필요하다')
   process.exit(1)
 }
+
+// html 읽기 → 고치기 → 쓰기를 계획서 잠금(md 와 같은 <계획서>.lock) 안에서 한다 — 동시에 돈 --decide·updatePlan 의 변경을 덮지 않게.
+// 중간에 process.exit 로 끝나도 잠금을 푼다
+const planLock = acquirePlanLock(mdPath)
+process.on('exit', () => releaseLock(planLock))
 
 const source = readFileSync(existsSync(htmlPath) ? htmlPath : join(ROOT, 'docs/plan-template.html'), 'utf8')
 const commentEnd = source.indexOf('-->') + 3
@@ -231,7 +237,7 @@ body = body.replace(planBlock, (_, open, __, close) => `${open}const PLAN = ${pl
 // 본문 안의 닫는 태그(대소문자 변형 포함)가 블록을 끊지 않게 — commit.sh 와 같은 방식
 const markdown = readFileSync(mdPath, 'utf8').replace(/<\/(script)/gi, '<\\/$1')
 body = body.replace(/(<script id="plan-md" type="text\/markdown">\n)[\s\S]*?(<\/script>)/, (_, open, close) => `${open}${markdown}\n${close}`)
-writeFileSync(htmlPath, head + body)
+writeAtomic(htmlPath, head + body)
 
 const decided = (plan.decisions ?? []).filter((decision) => decision.decided != null).length
 console.log(`${relative(ROOT, htmlPath)} · 결정 ${decided}/${plan.decisions?.length ?? 0} 확정 · 보낼 pane ${plan.leadPane || '(없음 — 복사로만)'}`)

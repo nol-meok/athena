@@ -4,6 +4,7 @@
  *
  *   updatePlan(path, (text) => text.replace(…))            바꿀 게 없으면(null·같음) false
  *   withPlanLock(path, () => { … })                         잠금만(html 을 따로 고칠 때)
+ *   acquirePlanLock(path) → lock … releaseLock(lock)        콜백으로 감쌀 수 없는 스크립트 본문용(plan-html.mjs)
  */
 import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -28,7 +29,7 @@ const isAlive = (pid) => {
   }
 }
 
-export function withPlanLock(path, work) {
+export function acquirePlanLock(path) {
   const lock = `${resolve(path)}.lock`
   const deadline = Date.now() + LOCK_WAIT_MS
   for (;;) {
@@ -54,6 +55,11 @@ export function withPlanLock(path, work) {
     if (Date.now() > deadline) throw new Error(`계획서 잠금을 ${LOCK_WAIT_MS / 1000}초 기다려도 풀리지 않았다: ${lock}`)
     sleep(100)
   }
+  return lock
+}
+
+export function withPlanLock(path, work) {
+  const lock = acquirePlanLock(path)
   try {
     return work()
   } finally {
