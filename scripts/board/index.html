@@ -1253,7 +1253,10 @@
         if (target === 'server' && !server) return toast('서버 주소를 [런] 의 전체 검수 칸에 넣어 주세요');
         if (!confirm(`${app} 여정 ${file.slice(0, 2)} 을 ${mode === 'real' ? '실제 모드(간편인증·수집을 직접 — 크롬 창이 따로 떠요)' : '자동 모드(더미 응답)'} 로 돌릴까요?\n${target === 'server' ? `☁️ 서버 ${server}` : '🖥 로컬 서버'} · 라이브 화면이 새 탭으로 열려요`)) return;
         try {
-          await api('/api/qa-suite', { app, profile: document.getElementById('qa-profile').value || 'verified', target, flow: false, server, journey: { file, mode } });
+          // 세션을 안 골랐으면 그 앱의 마지막 프로필(routes profiles 순서 — 보통 가장 깊은 로그인 상태)
+          if (!qaApps.length) await loadQaApps();
+          const lastProfile = (qaApps.find((entry) => entry.app === app)?.profiles || []).at(-1)?.name || '';
+          await api('/api/qa-suite', { app, profile: document.getElementById('qa-profile').value || lastProfile, target, flow: false, server, journey: { file, mode } });
           toast(`여정 ${file.slice(0, 2)} 을 시작했어요(${mode === 'real' ? '실제' : '자동'})`);
           qaSelected = '';
         } catch (error) { toast(`시작하지 못했어요: ${error.message}`); }

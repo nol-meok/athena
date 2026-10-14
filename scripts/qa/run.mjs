@@ -46,7 +46,7 @@ import { captureTracking, blockThirdParty, eventsSince, HIDE_EVENT_PANEL } from 
 import { createLiveLog, startScreencast } from './live.mjs'
 import { normalizeTarget, sessionFileOf, targetKey, checkServerUrl } from './targets.mjs'
 import { loadConfig } from '../lib/config.mjs'
-import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie, packQaWarnings, routesWarnings } from './apps.mjs'
+import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie, packQaWarnings, routesWarnings, codeConventions } from './apps.mjs'
 
 const QA_DIR = dirname(fileURLToPath(import.meta.url))
 const HERMES = join(QA_DIR, '..', '..')
@@ -83,6 +83,14 @@ if (!qaApp || !routesConfig) {
 if (!option('group')) for (const line of [...packQaWarnings(CONFIG), ...routesWarnings(appName, routesConfig)]) console.log(`⚠️  ${line}`)
 // 로컬 서버 포트·띄우는 명령·준비 단계·로그인 쿠키 — routes/<앱>.json server
 const SERVER = serverSettings(routesConfig)
+// 코드 관례(routes authGuard·tracking·dataErrors) — 잘못 적었으면 시작 전에 멈춘다. dataErrors 는 run.json 에 담아 라이브 화면 실패 리포트가 쓴다
+let CONVENTIONS
+try {
+  CONVENTIONS = codeConventions(appName, routesConfig)
+} catch (error) {
+  console.error(`⛔ ${error.message}`)
+  process.exit(2)
+}
 const suite = flag('suite')
 // --target local|server (D21) — server 면 dev 서버를 띄우지 않고 배포된 서버를 연다. 주소는 --server <주소>(없으면 routes 의 devUrl)
 const target = option('server') ? 'server' : normalizeTarget(option('target'))
@@ -390,7 +398,8 @@ const run = {
   group: option('group') || null,
   // D21 — local(내 컴퓨터 next dev) | server(배포된 서버 — serverUrl)
   target,
-  serverUrl
+  serverUrl,
+  dataErrors: CONVENTIONS.dataErrors
 }
 // 변경분 TC — 이 브랜치에서 확인할 TC 목록(/qa-tc 변경분 모드가 쓴다). 영향 QA 에서만, 파일이 없으면 예전처럼 화면만
 const tcPicksFile = option('tc-picks') ? resolve(option('tc-picks')) : suite ? null : join(HERMES, '.qa-runs', 'tc-picks', `${appName}@${run.branch.replace(/[^\w.-]+/g, '-')}.json`)

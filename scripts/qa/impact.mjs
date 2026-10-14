@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 import { cruise } from 'dependency-cruiser'
 import extractTSConfig from 'dependency-cruiser/config-utl/extract-ts-config'
 import { loadConfig } from '../lib/config.mjs'
-import { listQaApps, findQaApp, defaultQaApp, readRoutes, inApp, routerDirOf, isScreenPath, routeOfPath } from './apps.mjs'
+import { listQaApps, findQaApp, defaultQaApp, readRoutes, inApp, routerDirOf, isScreenPath, routeOfPath, codeConventions } from './apps.mjs'
 
 const HERMES = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const argv = process.argv.slice(2)
@@ -43,6 +43,14 @@ if (!qaApp) {
   process.exit(2)
 }
 const routesConfig = readRoutes(appName) ?? {}
+// 로그인 가드·트래킹 함수 이름 — routes authGuard·tracking(없으면 기본값)
+let conventions
+try {
+  conventions = codeConventions(appName, routesConfig)
+} catch (error) {
+  console.error(`⛔ ${error.message}`)
+  process.exit(2)
+}
 const cwdOption = option('cwd') || join(HERMES, 'repos', qaApp.repo)
 if (!existsSync(cwdOption)) {
   console.error(`⚠️  --cwd 경로가 없다: ${cwdOption}`)
@@ -205,8 +213,8 @@ function traceScreens(modules, changed) {
   return { global: [], screens }
 }
 
-// 로그인 필요 화면 표시용 — 화면 파일(App Router 는 감싸는 layout 까지)이 …AuthGuard 를 쓰는지만 본다(실제 판정은 runner 가 이동 여부로)
-const AUTH_GUARD = /\b\w*AuthGuard\b/
+// 로그인 필요 화면 표시용 — 화면 파일(App Router 는 감싸는 layout 까지)이 로그인 가드(routes authGuard, 기본 …AuthGuard)를 쓰는지만 본다(실제 판정은 runner 가 이동 여부로)
+const AUTH_GUARD = conventions.authGuard
 function usesAuthGuard(file) {
   const read = (path) => {
     try {
@@ -226,11 +234,12 @@ function usesAuthGuard(file) {
 }
 
 // ── 5) 트래킹 이벤트 목록(--events) ───────────────────────
-const EVENT_SUFFIX = { sendViewEvent: '_viewed', sendClickEvent: '_clicked', sendScrollEvent: '_scrolled', sendRequestEvent: '_request' }
-const EVENT_CALL = /\b(sendViewEvent|sendClickEvent|sendScrollEvent|sendRequestEvent)\(\s*(?:(['"`])((?:(?!\2)[^\\]|\\.)*)\2|([\w.]+))/g
-const SECTION_USE = /<ScrollEventWrapper[^>]*?sectionId=\{?\s*['"`]([^'"`]+)['"`]/g
+// 함수 이름·컴포넌트 이름은 routes tracking(없으면 sendViewEvent… · ScrollEventWrapper · PageViewEventLogger) — 식별자만 받으므로 정규식에 그대로 넣는다
+const EVENT_SUFFIX = conventions.calls
+const EVENT_CALL = new RegExp(`\\b(${Object.keys(EVENT_SUFFIX).map((name) => name.replaceAll('$', '\\$')).join('|')})\\(\\s*(?:(['"\`])((?:(?!\\2)[^\\\\]|\\\\.)*)\\2|([\\w.]+))`, 'g')
+const SECTION_USE = new RegExp(`<${conventions.section.tag}[^>]*?${conventions.section.prop}=\\{?\\s*['"\`]([^'"\`]+)['"\`]`, 'g')
 // 화면을 열면 반드시 나가는 화면 보기 이벤트 — <PageViewEventLogger pageName={'more'}> → more_viewed (이름이 글자로 적힌 것만)
-const PAGE_VIEW_USE = /<PageViewEventLogger[^>]*?pageName=\{?\s*(['"`])([^'"`$]+)\1/g
+const PAGE_VIEW_USE = new RegExp(`<${conventions.pageView.tag}[^>]*?${conventions.pageView.prop}=\\{?\\s*(['"\`])([^'"\`$]+)\\1`, 'g')
 const sourceCache = new Map()
 const sourceOf = (file) => {
   if (!sourceCache.has(file)) {

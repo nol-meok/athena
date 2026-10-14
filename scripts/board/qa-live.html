@@ -273,7 +273,11 @@
   };
   // ?group=<묶음 id> — --profiles 로 함께 돈 런들(세션 상태별). 탭으로 고른 런이 체크리스트·호출·팝업의 대상
   const groupId = params.get('group') || '';
-  const PROFILE_ORDER = ['logout', 'login', 'verified'];
+  // 세션 탭 순서 — 흐름이면 묶음 단계 순서(routes profiles 순서), 아니면 먼저 시작한 런부터
+  const profileRank = (run) => {
+    const index = (state.group?.stages || []).findIndex((stage) => stage.profile === run.profile);
+    return index < 0 ? Infinity : index;
+  };
   const frameHtml = (slot, run) => `<div class="frame ${slot}" data-slot="${slot}"${run ? ` data-run="${esc(run)}"` : ''}><div class="label"><b>${slot === 'desktop' ? '🖥 데스크톱' : '📱 모바일'}</b><span class="sub state"></span></div><div class="url"></div><div class="view"><div class="empty">아직 화면이 없어요</div></div></div>`;
   const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
   const STATUS = {
@@ -715,13 +719,18 @@
   const CAUSES = [
     ['app', '🐞 앱 의심', '코드 확인이 필요한 것 — 깨진 화면·에러·응답 오류'],
     ['guard', '↪️ 이동이 기대와 다름', '로그인·본인인증 가드나 리다이렉트가 설정한 기대와 달라요'],
-    ['data', '🗂 계정 데이터 없음', '테스트 계정에 신청 건·환급 이력 등이 없어서 — 흐름 씬·더미 응답으로 다룰 것'],
+    ['data', '🗂 계정 데이터 없음', '테스트 계정에 그 화면이 쓰는 데이터가 없어서 — 흐름 씬·더미 응답으로 다룰 것'],
     ['env', '🧪 QA 환경', 'dev 서버 시간 초과·로컬 프로그램 없음 등 환경 탓일 수 있어요'],
     ['scenario', '🎬 흐름 씬 실패', '씬 단계에서 멈춘 것']
   ];
-  const causeOf = (screen, problem) => {
+  // 계정 데이터 없음 문구 — 런을 시작할 때 routes dataErrors 를 run.json 에 담아 둔다(없으면 일반 문구만)
+  const DEFAULT_DATA_ERRORS = '데이터 필요|계정 상태|No data returned|Cannot return null';
+  const dataErrorsOf = (run) => {
+    try { return new RegExp(run.dataErrors || DEFAULT_DATA_ERRORS); } catch (error) { return new RegExp(DEFAULT_DATA_ERRORS); }
+  };
+  const causeOf = (run, screen, problem) => {
     const text = `${problem.text} ${screen.note || ''}`;
-    if (/데이터 필요|신청 건|계정 상태|No data returned|Cannot return null|refundHistoryId|apply\/result/.test(text)) return 'data';
+    if (dataErrorsOf(run).test(text)) return 'data';
     if (['timeout', 'network'].includes(problem.kind) || /Network Error|ERR_CONNECTION|Timeout \d+ms|blocked by CORS policy/.test(problem.text)) return 'env';
     if (problem.kind === 'expect') return 'guard';
     return 'app';
@@ -750,7 +759,7 @@
         const reason = (screen.reasons || [])[0];
         const problem = reason ? { kind: reason.kind, text: reason.sample, viewport: reason.viewports.join('·'), at: reason.at } : (screen.problems || [])[0] || { kind: 'expect', text: '실패' };
         const viewport = (screen.viewports || []).find((item) => item.name === (reason?.viewports[0] ?? problem.viewport)) || (screen.viewports || [])[0];
-        items.push({ cause: causeOf(screen, problem), run, screen, problem, reason, more: reason ? screen.reasons.length - 1 : (screen.problems || []).length - 1, shot: viewport?.shots?.head, key: `screen:${screen.key || screen.url || screen.route}` });
+        items.push({ cause: causeOf(run, screen, problem), run, screen, problem, reason, more: reason ? screen.reasons.length - 1 : (screen.problems || []).length - 1, shot: viewport?.shots?.head, key: `screen:${screen.key || screen.url || screen.route}` });
       }
       for (const scenario of run.scenarios || []) {
         if (scenario.status !== 'fail') continue;
@@ -920,7 +929,7 @@
       await loadGroupFile();
       const data = await (await fetch('/api/qa/runs', { cache: 'no-store' })).json();
       const runs = data.runs.filter((run) => run.group === groupId)
-        .sort((left, right) => PROFILE_ORDER.indexOf(left.profile) - PROFILE_ORDER.indexOf(right.profile));
+        .sort((left, right) => profileRank(left) - profileRank(right) || left.id.localeCompare(right.id));
       if (!runs.length) { document.getElementById('meta').textContent = '묶음의 런을 기다리는 중이에요…'; return; }
       if (!runId || !runs.some((run) => run.id === runId)) switchRun(runs[0].id);
       const tabs = document.getElementById('group-tabs');

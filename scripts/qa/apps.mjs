@@ -101,6 +101,43 @@ export function serverSettings(routes) {
   }
 }
 
+/**
+ * 코드 관례 — 레포마다 다른 이름을 routes/<앱>.json 에서 읽는다. 없으면 기본값
+ *   authGuard   로그인 필요 화면 표시(🔒)용 — 화면 파일·감싸는 layout 에서 찾을 정규식. 기본 "\\b\\w*AuthGuard\\b"
+ *   tracking    트래킹 이벤트 목록(impact --events)용
+ *     calls     이벤트 함수 이름 → 이벤트 이름 뒤에 붙는 말. 기본 sendViewEvent→_viewed · sendClickEvent→_clicked · sendScrollEvent→_scrolled · sendRequestEvent→_request
+ *     section   스크롤 구간 컴포넌트 { tag, prop } — 기본 { "tag": "ScrollEventWrapper", "prop": "sectionId" }
+ *     pageView  화면 보기 이벤트 컴포넌트 { tag, prop } — 기본 { "tag": "PageViewEventLogger", "prop": "pageName" } → <prop 값>_viewed
+ *   dataErrors  실패 리포트에서 "계정 데이터 없음"으로 묶을 문구 정규식(오류 문구·화면 note 에서 찾는다) — 기본은 일반 문구만
+ */
+export const DEFAULT_DATA_ERRORS = '데이터 필요|계정 상태|No data returned|Cannot return null'
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
+function patternOf(app, key, value, fallback) {
+  try {
+    return new RegExp(value ?? fallback)
+  } catch (error) {
+    throw new Error(`scripts/qa/routes/${app}.json 의 ${key} 가 정규식이 아니에요 — ${error.message}`)
+  }
+}
+function tagOf(app, key, value, fallback) {
+  const tag = { ...fallback, ...(value ?? {}) }
+  if (!IDENTIFIER.test(tag.tag) || !IDENTIFIER.test(tag.prop)) throw new Error(`scripts/qa/routes/${app}.json 의 ${key} 는 { "tag": 컴포넌트 이름, "prop": 속성 이름 } 이어야 해요`)
+  return tag
+}
+export function codeConventions(app, routes) {
+  const tracking = routes?.tracking ?? {}
+  const calls = tracking.calls ?? { sendViewEvent: '_viewed', sendClickEvent: '_clicked', sendScrollEvent: '_scrolled', sendRequestEvent: '_request' }
+  const bad = Object.entries(calls).find(([name, suffix]) => !IDENTIFIER.test(name) || typeof suffix !== 'string')
+  if (bad) throw new Error(`scripts/qa/routes/${app}.json 의 tracking.calls 는 { 함수 이름: "_붙는 말" } 이어야 해요 — ${bad[0]}`)
+  return {
+    authGuard: patternOf(app, 'authGuard', routes?.authGuard, '\\b\\w*AuthGuard\\b'),
+    calls,
+    section: tagOf(app, 'tracking.section', tracking.section, { tag: 'ScrollEventWrapper', prop: 'sectionId' }),
+    pageView: tagOf(app, 'tracking.pageView', tracking.pageView, { tag: 'PageViewEventLogger', prop: 'pageName' }),
+    dataErrors: patternOf(app, 'dataErrors', routes?.dataErrors, DEFAULT_DATA_ERRORS).source
+  }
+}
+
 // 옛 설정 경고 — 회사 팩을 옮기다 빠뜨린 것. 지금 동작은 기본값으로 계속 돈다(막지 않는다). run.mjs 는 시작할 때 찍고 현황판 QA 탭은 앱 옆에 보인다
 //   팩 qa.repo 가 남음 · routes 에 server 블록이 없음 · server.tokenCookie 가 비어 있음
 export function packQaWarnings(config) {
