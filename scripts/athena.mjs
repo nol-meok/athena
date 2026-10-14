@@ -7,7 +7,8 @@
  *   athena pack check     코어 파일에 팩의 회사 이름(pack.json names)이 있는지 찾는다 — 있으면 1
  *
  *   새 회사 첫 실행(/setup 스킬이 차례로 부른다)
- *   athena init --scan [--root <폴더>] [--json]       reposRoot(기본 ..) 아래 git 레포를 훑어 추정을 보여 준다(읽기 전용)
+ *   athena init --scan [--root <폴더>] [--depth <n>] [--json]
+ *                                                     reposRoot(기본 ..) 아래 n 단계(기본 3)까지 git 레포를 훑어 추정을 보여 준다(읽기 전용)
  *   athena init --pack <회사> --repos <a,b|all> [--names <x,y>] [--org <GitHub 조직>] [--agent <레포>=<이름> …]
  *                                                     고른 레포로 빈 팩(packs/<회사>)·athena.config.json 을 만들고 링크까지
  *   athena scaffold [<레포> …]                        pack.json 레포마다 에이전트·지식 뼈대·검증 스크립트 + 팩 서비스 문서·다이어그램 표(있는 파일은 그대로) + 링크
@@ -182,17 +183,17 @@ const flags = (name) => args.flatMap((arg, index) => (arg === `--${name}` ? [arg
 const init = () => {
   const root = flag('root') || local.reposRoot || '..'
   if (args.includes('--scan')) {
-    const repos = scanRepos(root, ROOT)
+    const repos = scanRepos(root, ROOT, Number(flag('depth')) || 3)
     if (args.includes('--json')) { console.log(JSON.stringify(repos, null, 2)); return }
     console.log(`레포 ${repos.length}개 (${resolve(ROOT, root)}) — 추정이다. /setup 이 확인받는다`)
-    console.log('| 레포 | 종류 | 층 | 언어 | 기준 브랜치 | 작업 base | 앱 | GitHub 조직 |')
-    console.log('|---|---|---|---|---|---|---|---|')
-    for (const repo of repos) console.log(`| ${repo.name} | ${repo.kind} | ${repo.layer}${repo.mobile ? '·앱' : ''} | ${repo.lang} | ${repo.branch || '?'} | ${repo.prBase || '?'} | ${repo.apps.map((app) => `${app}(${repo.appBranches[app]})`).join(' ') || '—'} | ${repo.org || '—'} |`)
+    console.log('| 레포 | 위치 | 종류 | 층 | 언어 | 기준 브랜치 | 작업 base | 앱 | GitHub 조직 |')
+    console.log('|---|---|---|---|---|---|---|---|---|')
+    for (const repo of repos) console.log(`| ${repo.name} | ${repo.path} | ${repo.kind} | ${repo.layer}${repo.mobile ? '·앱' : ''} | ${repo.lang} | ${repo.branch || '?'} | ${repo.prBase || '?'} | ${repo.apps.map((app) => `${app}(${repo.appBranches[app]})`).join(' ') || '—'} | ${repo.org || '—'} |`)
     return
   }
   const company = flag('pack')
   if (!company || !/^[a-z0-9][a-z0-9-]*$/.test(company)) fail('--pack <회사> 가 필요하다(영문 소문자·숫자·-)')
-  const scanned = scanRepos(root, ROOT)
+  const scanned = scanRepos(root, ROOT, Number(flag('depth')) || 3)
   const want = flag('repos')
   if (!want) fail('--repos <a,b> 또는 --repos all')
   const chosen = want === 'all' ? scanned : want.split(',').map((name) => scanned.find((repo) => repo.name === name) ?? fail(`스캔에 없는 레포: ${name}`))

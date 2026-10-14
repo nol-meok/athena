@@ -23,8 +23,10 @@ REPOS_ROOT="$(cd "$REPOS_ROOT" 2>/dev/null && pwd)" || { echo "❌ 레포 루트
 mkdir -p repos
 echo "레포 루트: $REPOS_ROOT"
 missing=0
-for name in $(python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); from athena_config import load; print(" ".join(r["name"] for r in load(".")["repos"]))'); do
-  target="$REPOS_ROOT/$name"
+# 레포 위치 — 보통 <레포 루트>/<이름>. 폴더로 묶여 있으면 athena.config.json 의 repoPaths(이 컴퓨터 설정 · /setup 이 적는다)
+while IFS=$'\t' read -r name rel; do
+  [ -n "$name" ] || continue
+  target="$REPOS_ROOT/${rel:-$name}"
   link="repos/$name"
   if [ -d "$target/.git" ] || [ -f "$target/.git" ]; then
     [ -L "$link" ] && rm "$link"
@@ -34,7 +36,7 @@ for name in $(python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); from at
     printf '  ✖ %-22s 없음 (%s) — clone 후 다시 실행\n' "$name" "$target"
     missing=$((missing+1))
   fi
-done
+done < <(python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); from athena_config import load; c = load("."); paths = c.get("repoPaths") or {}; print("\n".join(r["name"] + "\t" + paths.get(r["name"], "") for r in c["repos"]))')
 
 if [ "$LINKS_ONLY" = 1 ]; then
   [ "$missing" -gt 0 ] && exit 1

@@ -1,10 +1,10 @@
 // athena init · scaffold — 새 회사 첫 실행(/setup)의 기계적인 부분. 판단이 필요한 내용 채우기는 /setup 스킬(Claude)이 한다.
-//   scanRepos   reposRoot 아래 git 레포를 훑어 이름·기준 브랜치·작업 base·종류(single·monorepo·packages)·층(fe·be)·언어·앱을 추정(읽기 전용, fetch 없음)
+//   scanRepos   reposRoot 아래(기본 3단계 깊이) git 레포를 훑어 이름·기준 브랜치·작업 base·종류(single·monorepo·packages)·층(fe·be)·언어·앱을 추정(읽기 전용, fetch 없음)
 //   initPack    고른 레포로 빈 팩(pack.json · ROUTING.md · 폴더)과 athena.config.json 을 만든다
 //   scaffold    pack.json 의 레포마다 에이전트 프로필 · 지식 뼈대(rules·structure·gotchas) · 검증 스크립트를 템플릿으로 만든다(있는 파일은 건드리지 않는다)
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 const git = (dir, args) => {
   try { return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
@@ -59,13 +59,44 @@ export const inspectRepo = (dir) => {
   }
 }
 
-export const scanRepos = (root, athenaRoot) => {
+// reposRoot 아래를 depth 단계까지 내려가며 git 레포를 찾는다(회사·팀 폴더로 묶어 둔 경우). 레포를 찾으면 그 안으로는 더 내려가지 않는다.
+// 숨김 폴더·node_modules·아테나 자신은 건너뛴다. 같은 레포의 워크트리(.git 이 파일)는 원래 레포와 하나로 친다.
+// 이름(=팩 레포 이름)은 폴더 이름 — 겹치면 위 폴더 이름을 붙여 가른다. path 는 reposRoot 기준 상대 경로(이름과 다르면 설정 repoPaths 로 남긴다)
+export const scanRepos = (root, athenaRoot, depth = 3) => {
   const base = resolve(athenaRoot, root)
   const self = realpathSync(athenaRoot)
-  return readdirSync(base)
-    .map((name) => join(base, name))
-    .filter((dir) => isDir(dir) && existsSync(join(dir, '.git')) && realpathSync(dir) !== self)
-    .map(inspectRepo)
+  const found = []
+  const walk = (dir, level) => {
+    let names = []
+    try { names = readdirSync(dir) } catch { return }
+    for (const name of names.sort()) {
+      if (name.startsWith('.') || name === 'node_modules') continue
+      const path = join(dir, name)
+      if (!isDir(path)) continue
+      let real = ''
+      try { real = realpathSync(path) } catch { continue }
+      if (real === self || real.startsWith(self + '/')) continue
+      if (existsSync(join(path, '.git'))) {
+        const common = git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+        found.push({ path, common: common ? realpathSync(common) : real, worktree: !isDir(join(path, '.git')) })
+        continue
+      }
+      if (level < depth) walk(path, level + 1)
+    }
+  }
+  walk(base, 1)
+  // 같은 레포(같은 git common dir) — 원래 체크아웃(.git 이 폴더)을 남긴다
+  const byCommon = new Map()
+  for (const entry of found) {
+    const kept = byCommon.get(entry.common)
+    if (!kept || (kept.worktree && !entry.worktree)) byCommon.set(entry.common, entry)
+  }
+  const repos = [...byCommon.values()].map((entry) => ({ ...inspectRepo(entry.path), path: relative(base, entry.path) }))
+  const counts = repos.reduce((map, repo) => map.set(repo.name, (map.get(repo.name) ?? 0) + 1), new Map())
+  for (const repo of repos) {
+    if (counts.get(repo.name) > 1) repo.name = `${basename(dirname(repo.path)) || 'root'}-${repo.name}`
+  }
+  return repos
 }
 
 // 기본 에이전트 이름 — 레포(또는 앱) 이름 + -fe/-be. /setup 이 사용자에게 바꿀 기회를 준다
@@ -121,6 +152,13 @@ ${repos.map((repo) => `scripts/verify/${repo.name}.sh${repo.kind === 'monorepo' 
 `
 }
 
+// 이름과 다른 위치의 레포 → { 이름: reposRoot 기준 경로 } (기존 설정 것 위에). 없으면 null
+const repoPaths = (current, repos) => {
+  const paths = { ...(current?.repoPaths ?? {}) }
+  for (const repo of repos) if (repo.path && repo.path !== repo.name) paths[repo.name] = repo.path
+  return Object.keys(paths).length ? paths : null
+}
+
 // 고른 레포(스캔 결과 + 에이전트 이름)로 팩을 만든다
 export const initPack = ({ athenaRoot, company, repos, names = [], org = '', reposRoot = '..' }) => {
   const packRel = `packs/${company}`
@@ -168,6 +206,8 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
       ...(current ?? {}),
       pack: packRel,
       reposRoot: current?.reposRoot ?? reposRoot,
+      // reposRoot 바로 아래가 아닌 레포(폴더로 묶여 있거나 이름이 겹쳐 바꾼 것)는 이 컴퓨터의 위치를 적는다 — setup.sh 가 repos/<이름> 링크에 쓴다
+      ...(repoPaths(current, repos) ? { repoPaths: repoPaths(current, repos) } : {}),
     }, null, 2) + '\n')
   } catch (error) {
     for (const path of created.reverse()) rmSync(path, { recursive: true, force: true })

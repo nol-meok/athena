@@ -15,7 +15,7 @@ AskUserQuestion — "회사 팩 레포가 이미 있나요?" · 선택지 `있�
 - 있다: `git clone <주소> packs/<회사>` → `athena.config.json` 에 `{ "pack": "packs/<회사>", "reposRoot": ".." }` → `bin/athena pack link` → `scripts/setup.sh`(repos/ 링크) → 끝. 6단계(검증)만 돌려 보고한다
 
 ## 1. 레포 찾기
-`bin/athena init --scan [--root <폴더>]` — 표를 그대로 보여 준다. 추정(종류 single·monorepo·packages · 층 fe·be · 기준 브랜치 · 작업 base · 앱별 브랜치 · GitHub 조직)이다.
+`bin/athena init --scan [--root <폴더>] [--depth <n>]` — 표를 그대로 보여 준다. 레포 폴더 아래 3단계(팀·회사 폴더로 묶여 있어도)까지 찾고, 같은 레포의 워크트리는 하나로 친다. 이름이 겹치면 위 폴더 이름을 붙인다(`teamA-web`). 추정(종류 single·monorepo·packages · 층 fe·be · 기준 브랜치 · 작업 base · 앱별 브랜치 · GitHub 조직)이다. 바로 아래가 아닌 레포의 위치는 3단계가 이 컴퓨터 설정(`athena.config.json` `repoPaths`)에 적는다.
 
 ## 2. 사용자 확인 (AskUserQuestion, 한 번에 최대 4문항)
 - **넣을 레포**(multiSelect) — 아테나 자신·다른 아테나 복사본·연구용 레포는 기본으로 빼서 보여 준다

@@ -68,7 +68,9 @@ def main() -> None:
     if not os.path.isabs(repos_root):
         repos_root = os.path.join(ATHENA_DIR, repos_root)
     repos_root = os.path.realpath(repos_root)
-    found = [name for name in missing if is_repo(os.path.join(repos_root, name))]
+    # 폴더로 묶여 있는 레포는 repoPaths(이 컴퓨터 설정)에 위치가 있다
+    repo_paths = config.get('repoPaths') or {}
+    found = [name for name in missing if is_repo(os.path.join(repos_root, repo_paths.get(name, name)))]
 
     # 기본 위치에서 찾은 레포는 묻지 않고 바로 연결한다 — 사용자가 setup.sh 를 몰라도 되게
     messages = []
