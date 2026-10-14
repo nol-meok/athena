@@ -7,6 +7,8 @@
   - git push · gh pr (쓰기) → scripts/ship.sh 로 안내 (사용자가 "PR 올려줘" 했을 때 · 레포 하나짜리 작업만 · 미리보기 확인 후)
   - git revert · merge · cherry-pick · am  → commit.sh 를 거치지 않고 커밋을 만든다
   - git stash(list·show 제외) · reset --hard → 미커밋 변경(남의 작업일 수 있다)을 치우거나 지운다
+  - git checkout·restore 로 전부(. · :/ · 디렉터리)를 되돌리기 · checkout -f · clean -f → 같은 이유(파일 하나 되돌리기·restore --staged 는 통과)
+  - git rebase(--abort·--continue 등 진행 중 정리는 통과) · commit-tree · update-ref → commit.sh 를 거치지 않고 커밋·브랜치를 바꾼다
 통과: 실제로 실행되는 명령(조각의 첫 실행 토큰)이 **이 아테나(athena) 레포의** scripts/commit.sh · scripts/ship.sh 인 조각(경로를 풀어 비교 — 같은 이름의 다른 파일은 막는다),
       gh pr 읽기(view·list·status·checks·diff), gh api 읽기(GET).
 그 밖에 막는 것: ship.sh --repo-agent(아테나 전용 — 여러 레포 순서 조율), gh api 쓰기(-X POST 등 · -f/-F 필드 · --input, 붙여 쓴 꼴 포함).
@@ -157,8 +159,22 @@ def check_git(args):
     sub, rest = args[index], args[index + 1:]
     if sub == 'commit':
         return '커밋은 scripts/commit.sh 로만 한다 — 사용자가 "커밋해줘" 라고 했을 때: scripts/commit.sh --plan <계획서> --dir <워크트리> -m "<메시지>" -- <파일>…'
-    if sub in ('revert', 'merge', 'cherry-pick', 'am'):
-        return f'git {sub} 는 commit.sh 를 거치지 않고 커밋을 만든다(검증·계획서 기록 없음). 필요하면 이유를 사용자에게 말하고 사용자가 직접 실행하게 한다'
+    if sub in ('revert', 'merge', 'cherry-pick', 'am', 'commit-tree', 'update-ref'):
+        return f'git {sub} 는 commit.sh 를 거치지 않고 커밋·브랜치를 만든다(검증·계획서 기록 없음). 필요하면 이유를 사용자에게 말하고 사용자가 직접 실행하게 한다'
+    if sub == 'rebase' and not any(arg in ('--abort', '--quit', '--show-current-patch') for arg in rest):
+        return 'git rebase 는 commit.sh 를 거치지 않고 커밋을 다시 만든다. 필요하면 이유를 사용자에게 말하고 사용자가 직접 실행하게 한다(진행 중인 rebase 정리 --abort 는 된다)'
+    if sub == 'clean' and not any(arg in ('-n', '--dry-run') or re.match(r'^-[A-Za-z]*n', arg) for arg in rest):
+        return 'git clean 은 추적 안 된 파일(남의 작업일 수 있다)을 지운다. 지울 게 있으면 git clean -n 으로 목록만 보여 주고 사용자에게 확인받는다'
+    if sub in ('checkout', 'restore'):
+        # 작업 트리 전부·폴더째 되돌리기 — 남의 미커밋 변경까지 지운다. 파일 하나·restore --staged(스테이징만 내림)는 된다
+        staged_only = sub == 'restore' and any(arg in ('--staged', '-S') for arg in rest) and not any(arg in ('--worktree', '-W') for arg in rest)
+        paths = [arg for arg in rest if not arg.startswith('-')]
+        if sub == 'checkout' and '--' not in rest and not any(path in ('.', './', ':/') for path in paths):
+            paths = []   # checkout <브랜치> — 경로가 아니다
+        broad = any(path in ('.', './', ':/', ':') or path.startswith(':/') or os.path.isdir(os.path.join(cwd, path)) for path in paths)
+        forced = sub == 'checkout' and any(arg in ('-f', '--force') for arg in rest)
+        if (broad and not staged_only) or forced:
+            return f'git {sub} 로 작업 트리 전부·폴더째(또는 -f 로) 되돌리면 남의 미커밋 변경까지 지운다. 되돌릴 파일을 하나씩 지정하고, 많으면 사용자에게 확인받는다'
     if sub == 'stash' and (not rest or rest[0] not in ('list', 'show')):
         return 'git stash 는 미커밋 변경(사용자·남의 작업일 수 있다)을 치운다. 보기만(list·show) 허용 — 필요하면 사용자에게 묻는다'
     if sub == 'reset' and '--hard' in rest:
