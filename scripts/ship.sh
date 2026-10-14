@@ -65,9 +65,9 @@ REPO="$(basename "$MAIN")"
 for link in "$ATHENA_DIR"/repos/*; do [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$MAIN" ] && REPO="$(basename "$link")"; done
 [ "$TOP" != "$MAIN" ] || fail "메인 체크아웃(repos/$REPO)이다. 워크트리에서 작업한 브랜치만 올린다"
 BRANCH="$(git -C "$TOP" symbolic-ref --short -q HEAD)" || fail "detached HEAD 다"
-case "$BRANCH" in
-  dev|main|master|stg|frz|prd|prd-*|release/*|dev-*) fail "보호 브랜치($BRANCH)는 올리지 않는다" ;;
-esac
+# 보호 브랜치 — 흔한 운영·개발 이름 + 팩에 적힌 이 레포의 branch·prBase·extraPrBases(scripts/lib/athena_config.py)
+PROTECTED="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_protected; print(1 if is_protected(load(sys.argv[1]), sys.argv[2], sys.argv[3]) else 0)' "$ATHENA_DIR" "$REPO" "$BRANCH")" || fail "설정을 읽지 못했다(보호 브랜치 확인)"
+[ "$PROTECTED" = 0 ] || fail "보호 브랜치($BRANCH)는 올리지 않는다"
 [ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "커밋하지 않은 변경이 있다 — 먼저 \"커밋해줘\"(scripts/commit.sh) 또는 사용자에게 확인"
 UNTRACKED="$(git -C "$TOP" ls-files --others --exclude-standard | wc -l | tr -d ' ')"
 HEAD_SHA="$(git -C "$TOP" rev-parse --short HEAD)"
@@ -292,7 +292,15 @@ for base in "${BASES[@]}"; do
 done
 
 # ── 7. push → draft PR ───────────────────────────────────────────────────
-git -C "$TOP" push -u origin "$BRANCH" || fail "push 실패"
+# 검사한 커밋만 보낸다 — commit.sh 와 같은 워크트리 잠금을 쥐고(그동안 커밋이 끼어들지 않게) HEAD·미커밋 변경을 다시 본 뒤,
+# 브랜치 이름이 아니라 검사한 SHA 를 push 한다(fetch·확인을 기다리는 사이 다른 커밋이 생겨도 검사 안 된 커밋이 나가지 않게)
+LOCK="$(git -C "$TOP" rev-parse --git-dir)/hermes-commit.lock"
+mkdir "$LOCK" 2>/dev/null || fail "커밋이 진행 중이다($LOCK) — 끝난 뒤 미리보기부터 다시"
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+[ "$(git -C "$TOP" rev-parse HEAD)" = "$HEAD_FULL" ] || fail "확인하는 동안 HEAD 가 바뀌었다(${HEAD_SHA} → $(git -C "$TOP" rev-parse --short HEAD)) — 미리보기부터 다시"
+[ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "확인하는 동안 커밋하지 않은 변경이 생겼다 — 미리보기부터 다시"
+git -C "$TOP" push origin "$HEAD_FULL:refs/heads/$BRANCH" || fail "push 실패"
+git -C "$TOP" branch --quiet --set-upstream-to="origin/$BRANCH" "$BRANCH" 2>/dev/null || true
 PR_LINES=""
 for base in "${BASES[@]}"; do
   URL="$(cd "$TOP" && gh pr list --head "$BRANCH" --base "$base" --state open --json url --jq '.[0].url' 2>/dev/null)"
@@ -308,7 +316,7 @@ for base in "${BASES[@]}"; do
 done
 
 # ── 8. 계획서에 기록 ─────────────────────────────────────────────────────
-PUSHED="$(for base in "${BASES[@]}"; do git -C "$TOP" log --pretty=%H "origin/$base"..HEAD 2>/dev/null; done | sort -u | tr '\n' ' ')"
+PUSHED="$(for base in "${BASES[@]}"; do git -C "$TOP" log --pretty=%H "origin/$base"..$HEAD_FULL 2>/dev/null; done | sort -u | tr '\n' ' ')"
 python3 - "$ATHENA_DIR/$PLAN" "$(date '+%Y-%m-%d %H:%M')" "$BRANCH" "$PUSHED" "$PR_LINES" <<'PYEOF'
 import sys, re, pathlib
 plan, stamp, branch, pushed, pr_lines = sys.argv[1:6]

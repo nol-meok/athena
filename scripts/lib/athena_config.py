@@ -26,3 +26,21 @@ def load(athena_dir):
     merged['repos'] = pack.get('repos', [])
     merged['packDir'] = pack_dir
     return merged
+
+
+# 보호 브랜치 — 커밋·push 하지 않는 브랜치. 흔한 운영·개발 브랜치 이름 + 팩에 적힌 그 레포의 운영 기준(branch)·작업 base(prBase·extraPrBases)
+# (팩이 운영 브랜치를 production 같은 이름으로 쓰면 그것도 막힌다 — commit.sh·ship.sh)
+FIXED_PROTECTED = {'dev', 'develop', 'development', 'main', 'master', 'stg', 'staging', 'frz', 'prd', 'prod', 'production'}
+PROTECTED_PREFIXES = ('prd-', 'dev-', 'release/')
+
+
+def protected_branches(cfg, repo_name):
+    names = set(FIXED_PROTECTED)
+    repo = next((entry for entry in cfg.get('repos', []) if entry.get('name') == repo_name), {})
+    for entry in [repo, *(repo.get('apps') or {}).values()]:
+        names.update(name for name in [entry.get('branch'), entry.get('prBase'), *(entry.get('extraPrBases') or [])] if name)
+    return names
+
+
+def is_protected(cfg, repo_name, branch):
+    return branch in protected_branches(cfg, repo_name) or branch.startswith(PROTECTED_PREFIXES)

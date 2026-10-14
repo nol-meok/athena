@@ -72,9 +72,9 @@ if [ "$TOP" = "$MAIN" ] && [ $ALLOW_MAIN = 0 ]; then
 fi
 git -C "$TOP" worktree list --porcelain | grep -qxF "worktree $TOP" || [ "$TOP" = "$MAIN" ] || fail "등록된 워크트리가 아니다: $TOP"
 BRANCH="$(git -C "$TOP" symbolic-ref --short -q HEAD)" || fail "detached HEAD 다 — 브랜치를 만든 워크트리에서 커밋한다(scripts/new-branch.sh)"
-case "$BRANCH" in
-  dev|main|master|stg|frz|prd|prd-*|release/*|dev-*) fail "보호 브랜치($BRANCH)에는 커밋하지 않는다" ;;
-esac
+# 보호 브랜치 — 흔한 운영·개발 이름 + 팩에 적힌 이 레포의 branch·prBase·extraPrBases(scripts/lib/athena_config.py)
+PROTECTED="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_protected; print(1 if is_protected(load(sys.argv[1]), sys.argv[2], sys.argv[3]) else 0)' "$ATHENA_DIR" "$REPO" "$BRANCH")" || fail "설정을 읽지 못했다(보호 브랜치 확인)"
+[ "$PROTECTED" = 0 ] || fail "보호 브랜치($BRANCH)에는 커밋하지 않는다"
 
 # ── 2. 스테이징·파일 ────────────────────────────────────────────────────
 git -C "$TOP" diff --cached --quiet || fail "원래 스테이징돼 있던 변경이 있다(남의 변경일 수 있다). git -C $TOP diff --cached --stat 으로 확인 — 이 스크립트는 건드리지 않는다"
