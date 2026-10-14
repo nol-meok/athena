@@ -25,6 +25,7 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { githubOrg, loadConfig, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
+import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
@@ -446,9 +447,8 @@ const reviewPlan = async (planArg, { head = '', dryRun = false, force = false } 
   // 계획서 Checkpoint 에 한 줄 — 같은 HEAD 는 다시 돌지 않는다
   // 검토자를 기다리는 동안 ship.sh --yes(PR 줄)·리뷰·에이전트가 계획서를 고쳤을 수 있다 — 쓰기 직전에 다시 읽고 이 줄만 바꾼다
   const line = `- Learn review: ${today}${mark ? ` ${mark}` : ''} · ${items.length}건 (배우기 검토자)`
-  const current = readFileSync(planPath, 'utf8')
-  const updated = /^- Learn review:.*$/m.test(current) ? current.replace(/^- Learn review:.*$/m, line) : current.replace(/^(- Work ref:.*)$/m, `$1\n${line}`)
-  if (updated !== current) writeFileSync(planPath, updated)
+  // 잠금 안에서 지금 내용을 다시 읽어 이 줄만 바꾼다(scripts/lib/plan-update.mjs) · 정식 계획서면 html 의 md 사본도 맞춘다
+  updatePlan(planPath, (current) => (/^- Learn review:.*$/m.test(current) ? current.replace(/^- Learn review:.*$/m, line) : current.replace(/^(- Work ref:.*)$/m, `$1\n${line}`)))
 }
 
 // ── 대기열 · pane ──────────────────────────────────────────────────────
@@ -547,7 +547,7 @@ const watch = async () => {
     return
   }
   // 잠금은 내 것일 때만 치운다(다른 쪽이 주인 없는 잠금으로 보고 새로 잡았을 수 있다)
-  const cleanup = () => { if (lockOwner() === process.pid) rmSync(WATCHER_LOCK, { recursive: true, force: true }) }
+  const cleanup = () => releaseLock(WATCHER_LOCK)
   process.on('exit', cleanup)
   process.on('SIGINT', () => process.exit(130))
   process.on('SIGHUP', () => process.exit(129))   // pane 을 닫으면 온다

@@ -23,6 +23,8 @@ import subprocess
 import sys
 
 ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
+from plan_update import update_plan  # noqa: E402 — 경로를 넣은 뒤에 읽는다
 PLANS_DIR = ATHENA_DIR / 'plans'
 SNAPSHOT_PREFIX = '- Auto snapshot:'
 MAX_LISTED_FILES = 8
@@ -104,17 +106,15 @@ def snapshot_line(work_dir: str, trigger: str) -> str:
     return f'{SNAPSHOT_PREFIX} {now} 대화 압축 직전({trigger}) · {work_dir} · 🌿 {branch} · HEAD {head} · {dirty}'
 
 
-def write_snapshot(path: pathlib.Path, text: str, line: str) -> None:
-    if re.search(r'^' + re.escape(SNAPSHOT_PREFIX) + r'.*$', text, re.M):
-        updated = re.sub(r'^' + re.escape(SNAPSHOT_PREFIX) + r'.*$', lambda _: line, text, count=1, flags=re.M)
-    elif re.search(r'^- Work ref:.*$', text, re.M):
-        updated = re.sub(r'^(- Work ref:.*)$', lambda match: match.group(1) + '\n' + line, text, count=1, flags=re.M)
-    else:
-        return
-    # 에이전트가 같은 파일을 쓰는 중일 수 있다 — 임시 파일에 쓰고 한 번에 바꾼다
-    temp_path = path.with_name(path.name + '.snapshot-tmp')
-    temp_path.write_text(updated, encoding='utf-8')
-    os.replace(temp_path, path)
+def write_snapshot(path: pathlib.Path, line: str) -> None:
+    def record(text: str):
+        if re.search(r'^' + re.escape(SNAPSHOT_PREFIX) + r'.*$', text, re.M):
+            return re.sub(r'^' + re.escape(SNAPSHOT_PREFIX) + r'.*$', lambda _: line, text, count=1, flags=re.M)
+        if re.search(r'^- Work ref:.*$', text, re.M):
+            return re.sub(r'^(- Work ref:.*)$', lambda match: match.group(1) + '\n' + line, text, count=1, flags=re.M)
+        return None
+    # 다른 스크립트(commit.sh 등)가 같은 계획서를 고치는 중일 수 있다 — 잠금 안에서 지금 내용을 다시 읽어 이 줄만 바꾼다(scripts/lib/plan_update.py)
+    update_plan(path, record)
 
 
 def is_hermes_session(payload: dict) -> bool:
@@ -128,7 +128,7 @@ def on_pre(payload: dict) -> None:
     if not found:
         return
     path, text = found
-    write_snapshot(path, text, snapshot_line(work_dir_for(text, payload), payload.get('trigger') or '?'))
+    write_snapshot(path, snapshot_line(work_dir_for(text, payload), payload.get('trigger') or '?'))
 
 
 def on_post(payload: dict) -> None:

@@ -37,29 +37,22 @@ cp "$(git -C "$DIR" rev-parse --path-format=absolute --git-path index)" "$TMP_IN
 TREE="$(GIT_INDEX_FILE="$TMP_INDEX" git -C "$DIR" add -A >/dev/null 2>&1 && GIT_INDEX_FILE="$TMP_INDEX" git -C "$DIR" write-tree)"
 rm -f "$TMP_INDEX"
 [ -n "$TREE" ] || { echo "리뷰한 내용(tree)을 계산하지 못했다: $DIR" >&2; exit 1; }
-python3 - "$ATHENA_DIR/$PLAN" "$VERDICT" "$SHA" "$(date '+%Y-%m-%d %H:%M')" "$NOTE" "$DIRTY" "$BRANCH" "$TREE" "$REPO" <<'PYEOF'
-import re, sys, pathlib
+ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$VERDICT" "$SHA" "$(date '+%Y-%m-%d %H:%M')" "$NOTE" "$DIRTY" "$BRANCH" "$TREE" "$REPO" <<'PYEOF'
+import os, re, sys
+sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
 plan, verdict, sha, stamp, note, dirty, branch, tree, repo = sys.argv[1:10]
-path = pathlib.Path(plan); text = path.read_text(encoding='utf-8')
 extra = f' · 커밋 전 변경 {dirty}개 포함' if dirty != '0' else ''
 line = f"- Review result: {verdict} @{sha} · tree {tree[:12]} · 📦 {repo} · 🌿 {branch} · {stamp}{extra}{' · ' + note if note else ''}"
 # 레포·브랜치마다 한 줄 — 여러 레포 계획서에서 서로 덮어쓰지 않게(레포가 달라도 브랜치 이름은 같을 수 있다). 레포 표시가 없는 옛 줄은 건드리지 않는다
 same = re.compile(rf'^- Review result:.*📦 {re.escape(repo)} · 🌿 {re.escape(branch)} .*$', re.M)
-if same.search(text):
-    text = same.sub(lambda m: line, text, count=1)
-elif re.search(r'^- Review result:.*$', text, re.M):
-    last = list(re.finditer(r'^- Review result:.*$', text, re.M))[-1]
-    text = text[:last.end()] + '\n' + line + text[last.end():]
-else:
+def record(text):
+    if same.search(text):
+        return same.sub(lambda m: line, text, count=1)
+    if re.search(r'^- Review result:.*$', text, re.M):
+        last = list(re.finditer(r'^- Review result:.*$', text, re.M))[-1]
+        return text[:last.end()] + '\n' + line + text[last.end():]
     anchor = re.search(r'^- (Review|Work ref):.*$', text, re.M)
-    text = text[:anchor.end()] + '\n' + line + text[anchor.end():] if anchor else text.rstrip('\n') + '\n' + line + '\n'
-path.write_text(text, encoding='utf-8')
-html = path.with_suffix('.html')
-if html.exists():
-    page = html.read_text(encoding='utf-8')
-    block = re.compile(r'(<script id="plan-md" type="text/markdown">)(.*?)(</script>)', re.S)
-    if block.search(page):
-        body = re.sub(r'</(script)', r'<\\/\1', text, flags=re.I)
-        html.write_text(block.sub(lambda m: m.group(1) + '\n' + body + m.group(3), page, count=1), encoding='utf-8')
+    return text[:anchor.end()] + '\n' + line + text[anchor.end():] if anchor else text.rstrip('\n') + '\n' + line + '\n'
+update_plan(plan, record)
 print(line)
 PYEOF

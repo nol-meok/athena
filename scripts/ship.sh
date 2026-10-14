@@ -317,10 +317,10 @@ done
 
 # ── 8. 계획서에 기록 ─────────────────────────────────────────────────────
 PUSHED="$(for base in "${BASES[@]}"; do git -C "$TOP" log --pretty=%H "origin/$base"..$HEAD_FULL 2>/dev/null; done | sort -u | tr '\n' ' ')"
-python3 - "$ATHENA_DIR/$PLAN" "$(date '+%Y-%m-%d %H:%M')" "$BRANCH" "$PUSHED" "$PR_LINES" <<'PYEOF'
-import sys, re, pathlib
+ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$(date '+%Y-%m-%d %H:%M')" "$BRANCH" "$PUSHED" "$PR_LINES" <<'PYEOF'
+import os, sys, re
+sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
 plan, stamp, branch, pushed, pr_lines = sys.argv[1:6]
-path = pathlib.Path(plan); text = path.read_text(encoding='utf-8')
 prs = [line.split(' ', 1) for line in pr_lines.strip().splitlines() if ' ' in line]
 note = ' · '.join(f'push → {base} PR {url}' for base, url in prs)
 shas = set(pushed.split())
@@ -328,20 +328,16 @@ def mark(match):
     entry = match.group(0)
     hit = re.search(r'`([0-9a-f]{6,})`', entry)
     return entry.replace('push 안 함', note) if hit and any(full.startswith(hit.group(1)) for full in shas) and branch in entry else entry
-text = re.sub(r'^- .*push 안 함.*$', mark, text, flags=re.M)
-for base, url in prs:
-    line = f'- PR: {url} ({branch} → {base}, draft · {stamp})'
-    if f'- PR: {url}' not in text:
-        anchor = re.search(r'^- (Review|Work ref):.*$', text, re.M)
-        text = text[:anchor.end()] + '\n' + line + text[anchor.end():] if anchor else text.rstrip('\n') + '\n' + line + '\n'
-path.write_text(text, encoding='utf-8')
-html = path.with_suffix('.html')
-if html.exists():
-    page = html.read_text(encoding='utf-8')
-    block = re.compile(r'(<script id="plan-md" type="text/markdown">)(.*?)(</script>)', re.S)
-    if block.search(page):
-        body = re.sub(r'</(script)', r'<\\/\1', text, flags=re.I)
-        html.write_text(block.sub(lambda m: m.group(1) + '\n' + body + m.group(3), page, count=1), encoding='utf-8')
+def record(text):
+    text = re.sub(r'^- .*push 안 함.*$', mark, text, flags=re.M)
+    for base, url in prs:
+        line = f'- PR: {url} ({branch} → {base}, draft · {stamp})'
+        if f'- PR: {url}' not in text:
+            anchor = re.search(r'^- (Review|Work ref):.*$', text, re.M)
+            text = text[:anchor.end()] + '\n' + line + text[anchor.end():] if anchor else text.rstrip('\n') + '\n' + line + '\n'
+    return text
+# 잠금 안에서 지금 내용을 다시 읽어 바꾼다 · 정식 계획서면 html 의 md 사본도 맞춘다
+update_plan(plan, record)
 PYEOF
 [ $? = 0 ] || echo "⚠️ PR 은 올라갔지만 계획서 기록에 실패했다 — 계획서에 PR 링크를 손으로 적는다" >&2
 echo "   draft 다. 리뷰어 지정·Ready 전환은 GitHub 에서"

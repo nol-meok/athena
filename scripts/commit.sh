@@ -162,34 +162,28 @@ COMMITTED=1
 SHA="$(git -C "$TOP" rev-parse --short HEAD)"
 
 # ── 5. 계획서에 기록 ────────────────────────────────────────────────────
-python3 - "$ATHENA_DIR/$PLAN" "$(date '+%Y-%m-%d %H:%M')" "$REPO" "$BRANCH" "$SHA" "$MESSAGE" "$VERIFY_NOTE" "$TOP" "$ALLOW_MAIN" <<'PYEOF'
-import sys, pathlib, re
+ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$(date '+%Y-%m-%d %H:%M')" "$REPO" "$BRANCH" "$SHA" "$MESSAGE" "$VERIFY_NOTE" "$TOP" "$ALLOW_MAIN" <<'PYEOF'
+import os, sys, re
+sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
 plan, stamp, repo, branch, sha, message, note, top, allow_main = sys.argv[1:10]
-path = pathlib.Path(plan); text = path.read_text(encoding='utf-8')
 line = f"- {stamp} · {repo} · 🌿 {branch} · `{sha}` — {message.splitlines()[0]} · {note}{' · 메인 체크아웃(사용자 허용)' if allow_main == '1' else ''} · push 안 함"
-# 끝 개행이 없으면 마지막 줄이 절 끝 매칭에서 빠진다 — 먼저 보정
-if not text.endswith('\n'):
-    text += '\n'
-# 경량 템플릿은 "## Commits", 정식 템플릿은 Checkpoint 아래 "### Commits"
-head = re.search(r'^(#{2,3}) Commits\s*$', text, re.M)
-if head:
-    level = len(head.group(1))
-    # 같은 수준 이상의 다음 제목(또는 끝)까지가 이 절
-    pattern = r'(^#{%d} Commits\s*\n(?:.*\n)*?)(?=^#{1,%d} |\Z)' % (level, level)
-    updated = re.sub(pattern, lambda m: m.group(1).rstrip('\n') + '\n' + line + '\n\n', text, count=1, flags=re.M)
-else:
-    updated = text.rstrip('\n') + '\n\n## Commits\n' + line + '\n'
-if updated == text or line not in updated:
+def add_commit(text):
+    # 끝 개행이 없으면 마지막 줄이 절 끝 매칭에서 빠진다 — 먼저 보정
+    if not text.endswith('\n'):
+        text += '\n'
+    # 경량 템플릿은 "## Commits", 정식 템플릿은 Checkpoint 아래 "### Commits"
+    head = re.search(r'^(#{2,3}) Commits\s*$', text, re.M)
+    if head:
+        level = len(head.group(1))
+        # 같은 수준 이상의 다음 제목(또는 끝)까지가 이 절
+        pattern = r'(^#{%d} Commits\s*\n(?:.*\n)*?)(?=^#{1,%d} |\Z)' % (level, level)
+        updated = re.sub(pattern, lambda m: m.group(1).rstrip('\n') + '\n' + line + '\n\n', text, count=1, flags=re.M)
+    else:
+        updated = text.rstrip('\n') + '\n\n## Commits\n' + line + '\n'
+    return updated if line in updated else None
+# 잠금 안에서 지금 내용을 다시 읽어 더한다(다른 스크립트의 기록을 덮지 않게) · 정식 계획서면 html 의 md 사본도 맞춘다
+if not update_plan(plan, add_commit):
     sys.exit(1)   # 기록이 안 됐다 — 아래에서 경고
-path.write_text(updated, encoding='utf-8')
-# 정식 계획서는 같은 이름의 .html(결정 콘솔)이 md 본문을 <script id="plan-md"> 에 그대로 담는다 — 있으면 같이 맞춘다(본문 사본이 낡지 않게)
-html = path.with_suffix('.html')
-if html.exists():
-    page = html.read_text(encoding='utf-8')
-    block = re.compile(r'(<script id="plan-md" type="text/markdown">)(.*?)(</script>)', re.S)
-    if block.search(page):
-        body = re.sub(r'</(script)', r'<\\/\1', updated, flags=re.I)   # 본문 안의 닫는 태그(대소문자·공백 변형 포함)가 블록을 끊지 않게
-        html.write_text(block.sub(lambda m: m.group(1) + '\n' + body + m.group(3), page, count=1), encoding='utf-8')
 PYEOF
 [ $? = 0 ] || echo "⚠️ 커밋은 됐지만 계획서 기록에 실패했다 — 다시 커밋하지 말고 계획서 ## Commits 에 손으로 적는다: $SHA" >&2
 

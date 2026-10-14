@@ -46,6 +46,7 @@ import { applyLearn, discardLearn, editLearned, isLearnIssue, listLearn, removeL
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
 import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
 import { listQaApps, findQaApp, appOfAgent, readRoutes, serverSettings, sessionToken, packQaWarnings, routesWarnings } from '../qa/apps.mjs'
+import { withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
 import { approveRun as approveQaRun } from '../qa/baseline.mjs'
 import { explainProblems } from '../qa/explain.mjs'
 import { createHash, randomBytes } from 'node:crypto'
@@ -746,27 +747,34 @@ const setPlanStatus = (id, status, note = '') => {
   const path = safePath(id, 'plans')
   if (!path || !status) return '계획서를 찾지 못했거나 옮길 칸이 올바르지 않아요'
   if (path.includes('/archive/')) return '보관(archive)된 계획서는 옮길 수 없어요'
-  const text = readFileSync(path, 'utf8')
-  const oldStatus = text.match(/^- Status:.*$/m)?.[0]
-  const oldUpdated = text.match(/^- Updated:.*$/m)?.[0]
-  if (!oldStatus) return '계획서 Checkpoint 에 Status 줄이 없어요'
-  // 상태 값만 바꾸고 뒤의 설명은 둔다
-  const STATUS_TOKEN = /(planned|in_progress|blocked|ready_for_review|done)/
-  const replaced = STATUS_TOKEN.test(oldStatus) ? oldStatus.replace(STATUS_TOKEN, status) : oldStatus.replace(/^- Status:\s*/, `- Status: ${status} — `)
-  const newStatus = note ? `- Status: ${status} — ${note}` : replaced
-  const newUpdated = `- Updated: ${stamp()} / ${note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
-  let next = text.replace(oldStatus, newStatus)
-  if (oldUpdated) next = next.replace(oldUpdated, newUpdated)
-  writeFileSync(path, next)
-  // 정식 계획서의 결정 콘솔 html 안 md 사본(plan-md)도 같이 — 경량 계획서는 html 이 없다
-  const htmlPath = path.replace(/\.md$/, '.html')
-  if (existsSync(htmlPath)) {
-    let html = readFileSync(htmlPath, 'utf8')
-    if (html.includes(oldStatus)) html = html.replace(oldStatus, newStatus)
-    if (oldUpdated && html.includes(oldUpdated)) html = html.replace(oldUpdated, newUpdated)
-    writeFileSync(htmlPath, html)
+  // 다른 스크립트(commit.sh·ship.sh 등)가 같은 계획서를 고치는 중일 수 있다 — 잠금 안에서 지금 내용을 읽어 Status·Updated 줄만 바꾼다(scripts/lib/plan-update.mjs)
+  try {
+    return withPlanLock(path, () => {
+      const text = readFileSync(path, 'utf8')
+      const oldStatus = text.match(/^- Status:.*$/m)?.[0]
+      const oldUpdated = text.match(/^- Updated:.*$/m)?.[0]
+      if (!oldStatus) return '계획서 Checkpoint 에 Status 줄이 없어요'
+      // 상태 값만 바꾸고 뒤의 설명은 둔다
+      const STATUS_TOKEN = /(planned|in_progress|blocked|ready_for_review|done)/
+      const replaced = STATUS_TOKEN.test(oldStatus) ? oldStatus.replace(STATUS_TOKEN, status) : oldStatus.replace(/^- Status:\s*/, `- Status: ${status} — `)
+      const newStatus = note ? `- Status: ${status} — ${note}` : replaced
+      const newUpdated = `- Updated: ${stamp()} / ${note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
+      let next = text.replace(oldStatus, newStatus)
+      if (oldUpdated) next = next.replace(oldUpdated, newUpdated)
+      writeAtomic(path, next)
+      // 정식 계획서의 결정 콘솔 html 안 md 사본(plan-md)도 같이 — 경량 계획서는 html 이 없다
+      const htmlPath = path.replace(/\.md$/, '.html')
+      if (existsSync(htmlPath)) {
+        let html = readFileSync(htmlPath, 'utf8')
+        if (html.includes(oldStatus)) html = html.replace(oldStatus, newStatus)
+        if (oldUpdated && html.includes(oldUpdated)) html = html.replace(oldUpdated, newUpdated)
+        writeAtomic(htmlPath, html)
+      }
+      return null
+    })
+  } catch (error) {
+    return `계획서를 고치지 못했어요 — ${error.message}`
   }
-  return null
 }
 
 // ── 쓰기: 아테나에게 지시 ───────────────────────────────────────────────
