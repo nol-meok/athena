@@ -301,16 +301,19 @@ trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 [ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "확인하는 동안 커밋하지 않은 변경이 생겼다 — 미리보기부터 다시"
 git -C "$TOP" push origin "$HEAD_FULL:refs/heads/$BRANCH" || fail "push 실패"
 git -C "$TOP" branch --quiet --set-upstream-to="origin/$BRANCH" "$BRANCH" 2>/dev/null || true
-PR_LINES=""
+# base 가 여러 개면 하나가 실패해도 앞에서 만든 PR 은 계획서에 남긴다(그다음에 실패를 알린다 — 다시 돌리면 열린 PR 은 건너뛴다)
+PR_LINES=""; PR_FAILED=""
 for base in "${BASES[@]}"; do
   URL="$(cd "$TOP" && gh pr list --head "$BRANCH" --base "$base" --state open --json url --jq '.[0].url' 2>/dev/null)"
   if [ -n "$URL" ]; then
     echo "ℹ️ 이미 열린 PR 이 있다 — push 만 했다: $URL"
-  else
-    URL="$(cd "$TOP" && gh pr create --draft --base "$base" --head "$BRANCH" --title "$TITLE" --body-file "$BODY")" \
-      || fail "push 는 됐지만 PR 생성에 실패했다(base $base) — 사용자에게 알린다"
+  elif URL="$(cd "$TOP" && gh pr create --draft --base "$base" --head "$BRANCH" --title "$TITLE" --body-file "$BODY")"; then
     URL="$(tail -1 <<<"$URL")"
     echo "✅ draft PR: $URL ($BRANCH → $base)"
+  else
+    echo "❌ PR 생성 실패(base $base) — push 는 됐다" >&2
+    PR_FAILED="$PR_FAILED $base"
+    continue
   fi
   PR_LINES="$PR_LINES$base $URL"$'\n'
 done
@@ -340,4 +343,8 @@ def record(text):
 update_plan(plan, record)
 PYEOF
 [ $? = 0 ] || echo "⚠️ PR 은 올라갔지만 계획서 기록에 실패했다 — 계획서에 PR 링크를 손으로 적는다" >&2
+if [ -n "$PR_FAILED" ]; then
+  echo "⚠️ push 는 됐고${PR_LINES:+ 연 PR 은 계획서에 적었지만,} base${PR_FAILED} 의 PR 을 만들지 못했다 — 사용자에게 알린다(같은 명령을 다시 돌리면 열린 PR 은 건너뛰고 나머지만 만든다)" >&2
+  exit 1
+fi
 echo "   draft 다. 리뷰어 지정·Ready 전환은 GitHub 에서"
