@@ -30,7 +30,7 @@
 | `server.port` · `server.basePort` | 작업·기준 dev 서버 포트(기본 3291 · port+1). 두 앱을 번갈아 돌려도 한 번에 하나라 겹쳐도 된다 |
 | `server.dev` | 띄우는 명령(앱 폴더에서, `{port}` 치환) — 기본 `<패키지 관리자 exec> next dev -p {port}`. 패키지 관리자는 lockfile 로(pnpm·yarn·npm) |
 | `server.prepare` | dev 전에 돌릴 package.json 스크립트 — `"gen:relay"` 또는 `{ "script": "gen:env", "unless": ".env" }`(그 파일이 앱 폴더에 있으면 건너뜀). 기본 없음 |
-| `server.tokenCookie` | 로그인하면 생기는 쿠키 이름 앞부분 — 세션이 살아 있나·만료 시각을 이걸로 본다(값은 읽지 않는다). 없으면 세션 파일이 있으면 살아 있다고 본다 |
+| `server.tokenCookie` | 로그인하면 생기는 쿠키 이름 앞부분 — 세션이 살아 있나·만료 시각을 이걸로 본다(값은 읽지 않는다). 없으면 세션 파일이 있으면 살아 있다고 본다. `init-app.mjs` 초안은 코드의 쿠키 읽기·쓰기(`cookies.get('…')`·`getCookie('…')` 등)에서 찾은 후보를 `$todo` 에 적고 값은 비워 둔다 |
 | `server.localPorts` | 사람이 따로 띄워 둔 dev 서버 포트 — 현황판 [로그인] 이 `port` 다음으로 찾는다 |
 | `signInPath` · `signOutPath` · `authPaths` | 로그인 화면 · 로그인 중 거치는 경로(간편인증 콜백 등 — 없으면 앞 둘). login.mjs 는 이 경로 밖으로 나오고 로그인 쿠키가 생겨야 끝난 것으로 본다 |
 | `globalPaths` | 바뀌면 화면 전부가 영향인 경로 앞부분(레포 루트 기준 — 예 공통 tsconfig 패키지). `next.config.*`·`middleware`·`_app`·lockfile 등은 기본으로 친다 |

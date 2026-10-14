@@ -14,6 +14,7 @@
  *
  * 이미 있는 파일은 덮지 않는다 — 대신 코드에는 있는데 routes 에 없는 동적 화면, routes 에만 있는 화면을 알려 준다.
  * 추정한 값과 사람이 채울 값은 routes 의 "$todo" 에 적는다(run.mjs 는 $ 로 시작하는 키를 읽지 않는다).
+ * 로그인 쿠키(server.tokenCookie)는 코드의 쿠키 읽기·쓰기(cookies.get('…') · getCookie('…') 등)에서 후보만 찾아 $todo 에 적고 값은 비워 둔다.
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, realpathSync, writeFileSync, readFileSync } from 'node:fs'
@@ -60,6 +61,23 @@ function devFlags(script) {
   return match[1].replace(/(?:-p|--port)[=\s]+\d+/g, '').split(/\s+/).filter((part) => part && !/[&|;]/.test(part))
 }
 
+// 로그인 쿠키 이름 후보 — 코드에서 쿠키를 이름(글자)으로 읽고 쓰는 곳. 템플릿 글자(`B_AT_${env}`)는 ${ 앞까지(앞부분)를 이름으로 본다.
+// 토큰·세션처럼 보이는 이름을 앞에, 같으면 많이 나온 순. 값은 보지 않는다(이름만)
+const COOKIE_CALL = "(cookies(\\(\\))?\\.(get|set|has|delete)|[gs]etCookie|deleteCookie|removeCookie|Cookies\\.(get|set|remove))\\([[:space:]]*['\"`][A-Za-z0-9_.-]+"
+const TOKENISH = /token|auth|sess|sid|jwt|access|refresh|(^|[_-])at([_-]|$)|(^|[_-])rt([_-]|$)/i
+function cookieCandidates(root, ref, paths) {
+  const found = tryGit(root, ['grep', '-h', '-o', '-E', '-I', COOKIE_CALL, ref, '--', ...paths]) ?? ''
+  const counts = new Map()
+  for (const line of found.split('\n')) {
+    const name = line.match(/['"`]([A-Za-z0-9_.-]+)$/)?.[1]
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((left, right) => Number(TOKENISH.test(right[0])) - Number(TOKENISH.test(left[0])) || right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 5)
+    .map(([name, count]) => `${name}(${count}곳)`)
+}
+
 let failed = 0
 for (const entry of wanted) {
   const repoDir = join(HERMES, 'repos', entry.repo)
@@ -102,8 +120,10 @@ for (const entry of wanted) {
   const signOut = screens.find((screen) => /\/(sign-?out|log-?out)$/i.test(screen.route))?.route ?? ''
   const flags = devFlags(pkg.scripts?.dev)
   const prepareCandidates = Object.keys(pkg.scripts ?? {}).filter((name) => /^(gen|generate|codegen|relay)(:|$)/.test(name))
+  // 모노레포는 앱 폴더 + 공통 packages/(로그인 처리가 공통 패키지에 있는 경우가 많다)
+  const cookieNames = cookieCandidates(root, ref, entry.dir ? [entry.dir, 'packages'] : ['.'])
   const todo = [
-    'server.tokenCookie — 로그인하면 생기는 쿠키 이름(앞부분). 비우면 세션 파일이 있으면 살아 있다고 본다',
+    `server.tokenCookie — 로그인하면 생기는 쿠키 이름(앞부분). 비우면 세션 파일이 있으면 살아 있다고 본다 · ${cookieNames.length ? `코드에서 찾은 후보: ${cookieNames.join(' · ')}` : '코드에서 쿠키 이름을 찾지 못했다 — 로그인 뒤 브라우저 개발자 도구에서 본다'}`,
     'devUrl — 배포된 개발 서버 주소(dev·stg). 운영 주소는 QA 가 거부한다',
     signIn ? `signInPath — 화면 이름으로 추정(${signIn})` : 'signInPath — 로그인 화면 주소를 찾지 못했다',
     'authPaths — 로그인 중에 거치는 경로(간편인증 콜백 등)가 있으면 더한다',
