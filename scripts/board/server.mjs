@@ -36,7 +36,7 @@
  * Origin 이 맞는 요청만 받는다.
  */
 import { createServer } from 'node:http'
-import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, rmSync, mkdirSync, renameSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, rmSync, mkdirSync, renameSync, realpathSync } from 'node:fs'
 import { join, dirname, relative, basename, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile, execFileSync, spawn } from 'node:child_process'
@@ -724,9 +724,18 @@ const PLAN_STATUS_OF = { plan: 'planned', doing: 'in_progress', review: 'ready_f
 const ISSUE_STATUS_OF = { issue: 'open', plan: 'planned', doing: 'in_progress', review: 'in_progress', done: 'done' }
 const stamp = () => new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 16)
 
+// dir(plans·issues) 안의 파일만 — 이름(../ 섞임)과 실제 경로(링크가 밖을 가리킴) 둘 다 본다. dir 자체가 링크(팩)면 그 실제 폴더 안
+const insideDir = (path, dir) => {
+  if (!path.startsWith(join(ROOT, dir) + sep) || !existsSync(path)) return false
+  try {
+    return realpathSync(path).startsWith(realpathSync(join(ROOT, dir)) + sep)
+  } catch {
+    return false
+  }
+}
 const safePath = (id, dir) => {
   const path = join(ROOT, id)
-  return path.startsWith(join(ROOT, dir) + '/') && path.endsWith('.md') && existsSync(path) ? path : null
+  return path.endsWith('.md') && insideDir(path, dir) ? path : null
 }
 
 const moveCard = (id, column) => {
@@ -1370,7 +1379,9 @@ createServer(async (request, response) => {
     let plan = null
     if (dir === 'issues') {
       const planId = text.match(/^plan:\s*(\S+\.md)/m)?.[1]
-      if (planId && existsSync(join(ROOT, planId))) plan = { id: planId, text: readFileSync(join(ROOT, planId), 'utf8') }
+      // 이슈 파일의 plan: 값도 plans/ 안의 계획서만(../ 로 밖을 가리켜도 읽지 않는다)
+      const planPath = planId ? safePath(planId, 'plans') : null
+      if (planPath) plan = { id: planId, text: readFileSync(planPath, 'utf8') }
     }
     return response.end(JSON.stringify({ id, text, plan }))
   }
@@ -1625,7 +1636,7 @@ createServer(async (request, response) => {
   // 토큰을 넣어 준다 — 콘솔의 [이대로 진행] 이 /api/action 으로 PLAN.leadPane 에 결정을 보낸다(같은 출처라 Origin 검사도 통과)
   if (url.pathname.startsWith('/plans/') && url.pathname.endsWith('.html')) {
     const path = safeDecodedPath(url.pathname)
-    if (path && path.startsWith(join(ROOT, 'plans')) && existsSync(path)) {
+    if (path && insideDir(path, 'plans')) {
       const html = readFileSync(path, 'utf8').replace('</head>', `<script>window.ATHENA_BOARD_TOKEN = ${JSON.stringify(TOKEN)}</script>\n</head>`)
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
       response.end(html)
