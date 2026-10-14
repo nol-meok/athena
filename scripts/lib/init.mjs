@@ -3,7 +3,7 @@
 //   initPack    고른 레포로 빈 팩(pack.json · ROUTING.md · 폴더)과 athena.config.json 을 만든다
 //   scaffold    pack.json 의 레포마다 에이전트 프로필 · 지식 뼈대(rules·structure·gotchas) · 검증 스크립트를 템플릿으로 만든다(있는 파일은 건드리지 않는다)
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
 const git = (dir, args) => {
@@ -144,24 +144,35 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
     if (repo.appDir) entry.appDir = repo.appDir
     return entry
   })
-  for (const sub of ['agents', 'skills', 'knowledge', 'verify', 'docs', 'sync', 'archive']) mkdirSync(join(pack, sub), { recursive: true })
-  const packJson = {
-    $comment: `${company} 회사 팩 — 형식은 코어 docs/pack.md. athena init 이 만들었다`,
-    name: company,
-    names: [...new Set([company, ...names])],
-    ...(org ? { github: { org } } : {}),
-    worktreeCopy: { include: ['.env', '.env.*', '.claude/settings.local.json'] },
-    repos: entries,
+  // 하나라도 실패하면 이번에 만든 파일·폴더를 지워 처음 상태로 되돌린다(반쯤 만든 팩이 "이미 팩이 있다" 로 다시 못 돌게 막지 않게).
+  // 설정(athena.config.json)은 맨 마지막에 쓴다 — 팩이 다 만들어진 뒤에만 팩을 가리킨다
+  const created = []
+  const makeDir = (path) => { if (!existsSync(path)) { mkdirSync(path, { recursive: true }); created.push(path) } }
+  const write = (path, text) => { const existed = existsSync(path); writeFileSync(path, text); if (!existed) created.push(path) }
+  try {
+    makeDir(pack)
+    for (const sub of ['agents', 'skills', 'knowledge', 'verify', 'docs', 'sync', 'archive']) makeDir(join(pack, sub))
+    const packJson = {
+      $comment: `${company} 회사 팩 — 형식은 코어 docs/pack.md. athena init 이 만들었다`,
+      name: company,
+      names: [...new Set([company, ...names])],
+      ...(org ? { github: { org } } : {}),
+      worktreeCopy: { include: ['.env', '.env.*', '.claude/settings.local.json'] },
+      repos: entries,
+    }
+    write(join(pack, 'ROUTING.md'), routingDoc(company, entries))
+    write(join(pack, 'archive', '.gitkeep'), '')
+    write(join(pack, 'pack.json'), JSON.stringify(packJson, null, 2) + '\n')
+    writeFileSync(configPath, JSON.stringify({
+      $comment: '이 컴퓨터 설정 — pack: 회사 팩 폴더 · reposRoot: 담당 레포 클론이 있는 폴더. 회사 값은 팩에 있다',
+      ...(current ?? {}),
+      pack: packRel,
+      reposRoot: current?.reposRoot ?? reposRoot,
+    }, null, 2) + '\n')
+  } catch (error) {
+    for (const path of created.reverse()) rmSync(path, { recursive: true, force: true })
+    throw new Error(`팩을 만들다 실패해 되돌렸다 — ${error.message}`)
   }
-  writeFileSync(join(pack, 'pack.json'), JSON.stringify(packJson, null, 2) + '\n')
-  writeFileSync(join(pack, 'ROUTING.md'), routingDoc(company, entries))
-  writeFileSync(join(pack, 'archive', '.gitkeep'), '')
-  writeFileSync(configPath, JSON.stringify({
-    $comment: '이 컴퓨터 설정 — pack: 회사 팩 폴더 · reposRoot: 담당 레포 클론이 있는 폴더. 회사 값은 팩에 있다',
-    ...(current ?? {}),
-    pack: packRel,
-    reposRoot: current?.reposRoot ?? reposRoot,
-  }, null, 2) + '\n')
   return { pack, entries }
 }
 

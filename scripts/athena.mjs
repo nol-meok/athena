@@ -71,6 +71,8 @@ const plannedLinks = (pack) => {
   return links
 }
 
+// .git/info/exclude 는 워크트리들이 같이 쓴다(git common dir) — 체크아웃마다 자기 구간(경로로 표시)만 바꾼다.
+// 남의 체크아웃 구간은 그대로 두고(그 체크아웃의 팩 링크 목록이다), 폴더가 사라진 체크아웃의 구간과 옛 표시(경로 없는 구간)는 치운다
 const EXCLUDE_START = '# >>> athena pack links (athena pack link 가 관리)'
 const EXCLUDE_END = '# <<< athena pack links'
 const writeExclude = (paths) => {
@@ -79,33 +81,58 @@ const writeExclude = (paths) => {
   const file = resolve(ROOT, gitDir, 'info', 'exclude')
   mkdirSync(dirname(file), { recursive: true })
   const before = existsSync(file) ? readFileSync(file, 'utf8') : ''
-  // 관리 구간(여러 번 붙었으면 전부)을 지우고 새로 쓴다 — 표시 문자열의 괄호를 정규식으로 escape 한다
+  // 표시 문자열의 괄호를 정규식으로 escape 한다
   const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const kept = before.replace(new RegExp(`\\n?${escape(EXCLUDE_START)}[\\s\\S]*?${escape(EXCLUDE_END)}\\n?`, 'g'), '\n').replace(/\n+$/, '')
-  const block = paths.length ? `\n${EXCLUDE_START}\n${paths.map((path) => `/${path}`).join('\n')}\n${EXCLUDE_END}\n` : '\n'
+  const section = new RegExp(`\\n?${escape(EXCLUDE_START)}( · (.+))?\\n[\\s\\S]*?${escape(EXCLUDE_END)}\\n?`, 'g')
+  const kept = before.replace(section, (whole, _, owner) => (owner && owner !== ROOT && existsSync(owner) ? whole : '\n')).replace(/\n+$/, '')
+  const block = paths.length ? `\n${EXCLUDE_START} · ${ROOT}\n${paths.map((path) => `/${path}`).join('\n')}\n${EXCLUDE_END}\n` : '\n'
   writeFileSync(file, `${kept}${block}`)
+}
+
+// 지금 팩이 아닌 팩(packs/…)을 가리키는 링크 — 팩을 바꾸면 옛 팩 링크가 남는다
+const packLinks = () => {
+  const found = []
+  const walk = (dir, depth) => {
+    for (const name of readdirSync(dir)) {
+      if (['.git', 'node_modules', 'repos', '.worktrees', 'packs'].includes(name)) continue
+      const path = join(dir, name)
+      if (isLink(path)) {
+        if (readlinkSync(path).includes('packs/') || pointsInto(path, join(ROOT, 'packs'))) found.push(relative(ROOT, path))
+      } else if (depth < 3 && lstatSync(path).isDirectory()) walk(path, depth + 1)
+    }
+  }
+  walk(ROOT, 0)
+  return found
 }
 
 const link = () => {
   const pack = packDir()
-  const made = []; const kept = []; const clash = []
-  for (const { at, target } of plannedLinks(pack)) {
+  const planned = plannedLinks(pack)
+  // 먼저 다 살펴본다 — 코어 파일과 이름이 겹치는 게 하나라도 있으면 아무것도 바꾸지 않고 멈춘다(반만 링크된 상태를 남기지 않게)
+  const clash = planned.filter(({ at }) => !isLink(join(ROOT, at)) && existsSync(join(ROOT, at))).map(({ at }) => at)
+  if (clash.length) {
+    console.log(`🔗 팩 ${relative(ROOT, pack)} — ⚠️ 코어에 같은 이름의 실제 파일이 있어 아무것도 링크하지 않았다(${clash.length}개)`)
+    for (const at of clash) console.log(`   ⚠️ ${at}`)
+    process.exit(1)
+  }
+  const made = []; const kept = []
+  for (const { at, target } of planned) {
     const path = join(ROOT, at)
     const want = relative(dirname(path), target)
     if (isLink(path)) {
       if (readlinkSync(path) === want) { kept.push(at); continue }
       rmSync(path)
-    } else if (existsSync(path)) {
-      clash.push(at); continue   // 코어 파일과 이름이 겹친다 — 덮지 않는다
     }
     mkdirSync(dirname(path), { recursive: true })
     symlinkSync(want, path)
     made.push(at)
   }
+  // 팩을 바꿨으면 옛 팩 링크가 남는다 — 이번 목록에 없는 팩 링크는 지운다
+  const wanted = new Set(planned.map(({ at }) => at))
+  const stale = packLinks().filter((at) => !wanted.has(at))
+  for (const at of stale) rmSync(join(ROOT, at))
   writeExclude([...made, ...kept])
-  console.log(`🔗 팩 ${relative(ROOT, pack)} — 새로 ${made.length} · 그대로 ${kept.length}${clash.length ? ` · ⚠️ 코어 파일과 겹쳐 건너뜀 ${clash.length}` : ''}`)
-  for (const at of clash) console.log(`   ⚠️ ${at} — 코어에 같은 이름의 실제 파일이 있다`)
-  if (clash.length) process.exit(1)
+  console.log(`🔗 팩 ${relative(ROOT, pack)} — 새로 ${made.length} · 그대로 ${kept.length}${stale.length ? ` · 옛 팩 링크 지움 ${stale.length}` : ''}`)
 }
 
 const unlink = () => {

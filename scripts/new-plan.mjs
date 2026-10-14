@@ -51,8 +51,7 @@ const slug = summary
   .slice(0, 40)
 const dir = join(ROOT, 'plans/task')
 mkdirSync(dir, { recursive: true })
-let file = join(dir, `${day}-${agent || 'athena'}-${slug}.md`)
-for (let count = 2; existsSync(file); count += 1) file = join(dir, `${day}-${agent || 'athena'}-${slug}-${count}.md`)
+const nameOf = (count) => join(dir, `${day}-${agent || 'athena'}-${slug}${count > 1 ? `-${count}` : ''}.md`)
 
 const prompt = promptFile && existsSync(promptFile) ? readFileSync(promptFile, 'utf8').trim() : ''
 const template = readFileSync(join(ROOT, 'docs/plan-template-light.md'), 'utf8')
@@ -67,5 +66,14 @@ const body = template
   .replaceAll('{{issue}}', issue || '없음')
   .replaceAll('{{prompt}}', prompt ? prompt.split('\n').map((line) => `> ${line}`).join('\n') : '> (지시문 없음 — pane 에서 대화로 지시)')
 
-writeFileSync(file, body.normalize('NFC') + '\n')
+// 없을 때만 만든다(wx) — 같은 이름으로 동시에 만들어도 서로 덮지 않고 다음 번호로 간다
+let file = ''
+for (let count = 1; !file; count += 1) {
+  try {
+    writeFileSync(nameOf(count), body.normalize('NFC') + '\n', { flag: 'wx' })
+    file = nameOf(count)
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+}
 console.log(file.replace(ROOT + '/', ''))
