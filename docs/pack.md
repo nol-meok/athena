@@ -26,7 +26,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 | `diagrams/*` | `docs/diagrams/` | 서비스 다이어그램 · `index.json`(목록 카드) · `SERVICES.md`(/diagram 서비스 표) |
 | `docs/*` | `docs/` | 회사 안내 문서 |
 | `scripts/*` | `scripts/` | 회사 전용 스크립트 |
-| `qa/{docs,routes,scenarios}` | `docs/qa` · `scripts/qa/routes` · `scripts/qa/scenarios` | QA TC·화면 목록·흐름 씬 |
+| `qa/{docs,routes,scenarios}` | `docs/qa` · `scripts/qa/routes` · `scripts/qa/scenarios` | QA TC·앱별 QA 설정(화면 목록·서버)·흐름 씬 — 초안은 `node scripts/qa/init-app.mjs --all`(/setup 이 부른다) |
 | `sync/` · `archive/` | `.sync` · `archive` | 지문 · 보관한 일 |
 | `hooks/delegate-env.sh` | — | (선택) `delegate.sh` 가 에이전트 실행기에 넣을 export 줄 |
 
@@ -41,7 +41,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   "github": { "org": "acme-inc" },        // PR 조회·링크 판별
   "trackedDeps": ["^@acme/"],             // 지문에 버전을 남길 사내 패키지(정규식)
   "worktreeCopy": { "include": [".env", ".env.*"] },
-  "qa": { "repo": "web", "apps": { "shop-web": "쇼핑" }, "ownHosts": ["acme.com"], "iconFont": "", "exampleUrl": "https://dev.acme.com" },
+  "qa": { "apps": { "shop-web": "쇼핑" }, "ownHosts": ["acme.com"], "iconFont": "", "exampleUrl": "https://dev.acme.com" },   // apps 는 화면에 보일 이름표만(없어도 된다)
   "derived": { "servicesColumns": ["…"], "playbookOrder": ["…"] },   // 없으면 설정 순서
   "hooks": { "delegateEnv": "hooks/delegate-env.sh" },
   "repos": [
@@ -64,3 +64,13 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 - `kind`: `single` · `monorepo`(앱마다 에이전트·브랜치, 커밋 검증은 바뀐 앱마다) · `packages`(발행 패키지 — 커밋 검증에 패키지 이름 필요)
 - `layer: "be"` — 백엔드. PR 범위 규칙이 없으면 `src/features/<기능>`·`src/<모듈>`
+
+## QA 대상 앱
+
+QA 시뮬레이션(`scripts/qa`) 대상은 **등록한 레포에서 정해진다**(`scripts/qa/apps.mjs`) — 따로 적지 않는다.
+
+- 단일 레포 = 앱 하나(이름은 레포 이름, 바꾸려면 `"qaApp": "<이름>"`) · 앱 폴더는 레포 루트
+- 모노레포 = `apps` 의 앱마다(앱 폴더 `apps/<앱>`, 다르면 `apps.<앱>.dir`)
+- `kind: packages`·`layer: be` 는 화면이 없어 뺀다. Next.js 앱(`app/`·`pages/`, `src/` 포함)만 돌릴 수 있다
+- 앱마다 `qa/routes/<앱>.json` 이 있어야 돌린다(없으면 현황판에 안 보이고 run.mjs 가 초안 명령을 알려 준다). 형식은 `docs/knowledge/common/verify.md` "앱 설정"
+- 예전 `qa.repo`(모노레포 하나 가정)는 더 읽지 않는다

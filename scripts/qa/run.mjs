@@ -3,7 +3,8 @@
  * QA 시뮬레이션 실행 — 영향 화면을 실제 브라우저(Playwright)로 열어 검사하고, 기준 브랜치 화면과 비교한다.
  * 계획서: plans/feature/20261002-QA-시뮬레이션-영향-화면.md
  *
- *   node scripts/qa/run.mjs --cwd <워크트리> [--app refund-web] [--plan <계획서>] [옵션]
+ *   node scripts/qa/run.mjs --cwd <워크트리> [--app <앱>] [--plan <계획서>] [옵션]
+ *   앱 = 팩에 등록한 화면 레포(scripts/qa/apps.mjs). 설정 scripts/qa/routes/<앱>.json 이 있는 앱이 하나면 --app 생략 가능
  *
  *   --base <ref>        비교 기준 ref (기본 origin/<prBase>). 그 merge-base 를 기준 화면으로 띄운다
  *   --no-base           기준 화면 비교를 건너뛴다(스모크만)
@@ -20,7 +21,7 @@
  *   --watch             창은 띄우되 빠르게(= --headed --slow 0) — 전체 검수를 지켜볼 때
  *   --target server --server <주소>  배포된 서버(dev·stg·dev-1~3·PR 미리보기)로 — 운영 주소는 거부. --server 만 줘도 된다
  *   --mode auto|real    흐름 씬·여정의 "only" 단계를 고른다(기본 auto — 더미 응답, real — 사람이 실제 본인인증·간편인증·수집)
- *   --scenarios-only    화면 검사 없이 흐름 씬만(--suite 와 함께) — 예: --suite --app refund-web --profile login --scenarios 05- --scenarios-only --live --headed
+ *   --scenarios-only    화면 검사 없이 흐름 씬만(--suite 와 함께) — 예: --suite --app <앱> --profile login --scenarios 05- --scenarios-only --live --headed
  *   --flow              QA 세션 흐름(D18~D20) — 비로그인 검수 → 로그인 상태 전부 차례로(세션 없으면 그 차례에 로그인 창) → 실패 리포트 모달. --live 와 함께
  *   --profiles a,b      세션 상태 여럿을 동시에(dev 서버 하나 공유)
  *   --tc-picks <파일>    변경분 TC(/qa-tc <앱> <브랜치> 가 만든 .qa-runs/tc-picks/<앱>@<브랜치>.json) — 영향 QA 에서 기본으로 그 브랜치 파일을 찾는다.
@@ -45,12 +46,13 @@ import { captureTracking, blockThirdParty, eventsSince, HIDE_EVENT_PANEL } from 
 import { createLiveLog, startScreencast } from './live.mjs'
 import { normalizeTarget, sessionFileOf, targetKey, checkServerUrl } from './targets.mjs'
 import { loadConfig } from '../lib/config.mjs'
+import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie } from './apps.mjs'
 
 const QA_DIR = dirname(fileURLToPath(import.meta.url))
 const HERMES = join(QA_DIR, '..', '..')
-// QA 대상 모노레포·자기 요청 도메인·아이콘 글꼴 — 설정 qa
-const QA = loadConfig(HERMES).qa ?? {}
-const QA_REPO = QA.repo ?? ''
+// 자기 요청 도메인·아이콘 글꼴 — 팩 설정 qa. QA 대상 앱은 팩에 등록한 레포에서(apps.mjs)
+const CONFIG = loadConfig(HERMES)
+const QA = CONFIG.qa ?? {}
 const argv = process.argv.slice(2)
 const option = (name) => {
   const index = argv.indexOf(`--${name}`)
@@ -67,13 +69,24 @@ if (!process.env.ATHENA_HEAVY_HELD) {
   process.exit(relaunched.status ?? 1)
 }
 
-const appName = option('app') || 'refund-web'
+const appName = option('app') || defaultQaApp(CONFIG) || ''
+const qaApp = findQaApp(CONFIG, appName)
+const routesConfig = qaApp ? readRoutes(appName) : null
+if (!qaApp || !routesConfig) {
+  const apps = listQaApps(CONFIG)
+  console.error(!qaApp
+    ? `⚠️  ${appName ? `QA 대상 앱이 아니다: ${appName}` : 'QA 대상 앱을 골라 주세요(--app)'} — ${apps.map((entry) => `${entry.app}${entry.configured ? '' : '(설정 전)'}`).join(', ') || '팩에 등록한 화면 레포가 없다'}`
+    : `⚠️  ${appName} 은 QA 설정 전이다 — node scripts/qa/init-app.mjs --app ${appName} 로 scripts/qa/routes/${appName}.json 초안을 만든다`)
+  process.exit(2)
+}
+// 로컬 서버 포트·띄우는 명령·준비 단계·로그인 쿠키 — routes/<앱>.json server
+const SERVER = serverSettings(routesConfig)
 const suite = flag('suite')
 // --target local|server (D21) — server 면 dev 서버를 띄우지 않고 배포된 서버를 연다. 주소는 --server <주소>(없으면 routes 의 devUrl)
 const target = option('server') ? 'server' : normalizeTarget(option('target'))
 const serverUrl = (() => {
   if (target !== 'server') return null
-  const value = option('server') || JSON.parse(readFileSync(join(QA_DIR, 'routes', `${appName}.json`), 'utf8')).devUrl
+  const value = option('server') || routesConfig.devUrl
   if (!value) {
     console.error(`⚠️  서버 주소가 없다 — --server <주소> 를 주거나 routes/${appName}.json 에 devUrl 을 둔다`)
     process.exit(2)
@@ -89,16 +102,15 @@ const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', st
 
 // 전체 검수는 지금 개발 브랜치(origin/<prBase>) 그대로를 본다 — qa-base 워크트리를 최신으로 맞춰 쓴다
 function prepareSuiteTree() {
-  const mainCheckout = realpathSync(join(HERMES, 'repos', QA_REPO))
-  const config = loadConfig(HERMES)
-  const prBase = config.repos.find((repo) => repo.name === QA_REPO)?.apps?.[appName]?.prBase ?? 'dev'
+  const mainCheckout = realpathSync(join(HERMES, 'repos', qaApp.repo))
+  const prBase = qaApp.prBase
   try {
     git(['fetch', '--quiet', 'origin', prBase], mainCheckout)
   } catch {
     console.log(`⚠️  origin/${prBase} fetch 실패 — 로컬에 있는 ref 로 진행`)
   }
   const target = git(['rev-parse', `origin/${prBase}`], mainCheckout)
-  const basePath = join(HERMES, '.worktrees', QA_REPO, 'qa-base')
+  const basePath = join(HERMES, '.worktrees', qaApp.repo, 'qa-base')
   if (!existsSync(basePath)) {
     git(['worktree', 'add', '--detach', basePath, target], mainCheckout)
     execFileSync(join(HERMES, 'scripts', 'wt-copy-local.sh'), [mainCheckout, basePath], { stdio: 'ignore' })
@@ -115,7 +127,7 @@ function prepareSuiteTree() {
 // 단계마다 세션이 살아 있으면 그대로(D18), 없거나 만료면 라이브 화면에 "로그인해 주세요" 를 띄우고 보이는 로그인 창을 연다(D19) → 사용자가 로그인하면
 // 저장 → ③ 그 세션으로 검수(로그인을 안 하면 그 단계만 건너뜀) → ④ 끝나면 라이브 화면이 실패 리포트 모달을 띄운다(D20). 진행 상태는 .qa-runs/<묶음>/group.json
 if (flag('flow')) {
-  const flowRoutes = JSON.parse(readFileSync(join(QA_DIR, 'routes', `${appName}.json`), 'utf8'))
+  const flowRoutes = routesConfig
   const flowProfiles = Object.entries(flowRoutes.profiles ?? {}).filter(([key]) => !key.startsWith('$'))
   // 로그인 상태 단계 — 세션이 있는 프로필 전부(routes 순서). flowTargets 로 고를 수 있다
   const flowTargets = flowRoutes.flowTargets ?? flowProfiles.filter(([, settings]) => settings.session).map(([name]) => name)
@@ -146,7 +158,7 @@ if (flag('flow')) {
     if (value === '--flow') skip.add(index)
   })
   const baseArgs = argv.filter((_, index) => !skip.has(index))
-  const devUrl = target === 'server' ? serverUrl : 'http://localhost:3291'
+  const devUrl = target === 'server' ? serverUrl : `http://localhost:${SERVER.port}`
   const launchStage = (stage, extra) => {
     stage.status = 'running'
     saveGroup()
@@ -168,13 +180,13 @@ if (flag('flow')) {
       resolve(code ?? 1)
     }))
   }
-  // 저장한 세션이 살아 있나(D18) — 파일이 있고 로그인 토큰(B_AT*) 이 만료 전
+  // 저장한 세션이 살아 있나(D18) — 파일이 있고 로그인 토큰(server.tokenCookie) 이 만료 전
   const sessionAlive = (profileName) => {
     const settings = flowRoutes.profiles?.[profileName]
     if (!settings?.session) return true
     const file = sessionFileOf(HERMES, appName, settings.session, target, serverUrl)
     if (!existsSync(file)) return false
-    const token = (JSON.parse(readFileSync(file, 'utf8')).cookies ?? []).find((cookie) => cookie.name.startsWith('B_AT') && cookie.expires > 0)
+    const token = sessionToken(JSON.parse(readFileSync(file, 'utf8')).cookies, SERVER)
     return !token || token.expires * 1000 > Date.now() + 10 * 60 * 1000
   }
   console.log(`🧭 QA 세션 흐름 — ${target === 'server' ? `서버 ${devUrl}` : '로컬 서버'} · 비로그인 → ${flowTargets.join(' → ') || '(로그인 상태 없음)'} · 묶음 ${groupId}`)
@@ -200,7 +212,7 @@ if (flag('flow')) {
   const loginMessage = (profileName) => {
     const note = flowRoutes.profiles[profileName]?.note ?? ''
     const how = target === 'server' ? '로그인(간편인증 가능)' : '이메일 로그인'
-    return `${profileName} 상태로 검수하려면 로그인해 주세요 — 열린 창에서 ${how}${profileName === 'verified' ? ' + 휴대폰 본인인증' : ''}을 마치면 이어서 진행해요(10분)${note ? ` · ${note}` : ''}`
+    return `${profileName} 상태로 검수하려면 로그인해 주세요 — 열린 창에서 ${how}을 마치면 이어서 진행해요(10분)${note ? ` · ${note}` : ''}`
   }
   const requestStageLogin = (stage) => {
     const session = flowRoutes.profiles[stage.profile].session
@@ -232,10 +244,10 @@ if (flag('flow')) {
     }
     codes.push(await launchStage(stage, ['--head-url', devUrl]))
   }
-  // 로컬이면 첫 단계가 남긴 dev 서버(3291)를 끈다
+  // 로컬이면 첫 단계가 남긴 dev 서버(server.port)를 끈다
   try {
     if (target === 'local') {
-      const pid = execFileSync('lsof', ['-nP', '-t', '-iTCP:3291', '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
+      const pid = execFileSync('lsof', ['-nP', '-t', `-iTCP:${SERVER.port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
       const groupPid = execFileSync('ps', ['-o', 'pgid=', '-p', pid], { encoding: 'utf8' }).trim()
       if (groupPid) process.kill(-Number(groupPid), 'SIGTERM')
     }
@@ -259,7 +271,7 @@ if (option('profiles')) {
     if (value === '--profiles' || value === '--cwd') skip.add(index).add(index + 1)
   })
   const baseArgs = argv.filter((_, index) => !skip.has(index))
-  const devUrl = target === 'server' ? serverUrl : `http://localhost:3291`
+  const devUrl = target === 'server' ? serverUrl : `http://localhost:${SERVER.port}`
   const children = []
   const launch = (name, extra) => {
     const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...baseArgs, '--profile', name, '--cwd', tree, '--group', groupId, ...extra], {
@@ -306,9 +318,9 @@ if (option('profiles')) {
     console.log('⚠️  첫 런의 dev 서버가 뜨지 않아 나머지 상태는 돌리지 않았다')
   }
   const codes = await Promise.all(children)
-  // 첫 런이 남겨 둔(--keep-servers) dev 서버를 끈다 — 이 런이 띄운 3291 만
+  // 첫 런이 남겨 둔(--keep-servers) dev 서버를 끈다 — 이 런이 띄운 server.port 만
   try {
-    const pid = execFileSync('lsof', ['-nP', '-t', '-iTCP:3291', '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
+    const pid = execFileSync('lsof', ['-nP', '-t', `-iTCP:${SERVER.port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
     const groupPid = execFileSync('ps', ['-o', 'pgid=', '-p', pid], { encoding: 'utf8' }).trim()
     if (groupPid) process.kill(-Number(groupPid), 'SIGTERM')
   } catch {
@@ -319,12 +331,13 @@ if (option('profiles')) {
 
 const cwdOption = option('cwd') || (suite ? prepareSuiteTree() : '')
 if (!cwdOption || !existsSync(cwdOption)) {
-  console.error('사용: node scripts/qa/run.mjs --cwd <워크트리> [--app refund-web] [--plan <계획서>] [--no-base] [--keep-servers]  ·  전체 검수: --suite [--profile <이름>]')
+  console.error('사용: node scripts/qa/run.mjs --cwd <워크트리> [--app <앱>] [--plan <계획서>] [--no-base] [--keep-servers]  ·  전체 검수: --suite [--profile <이름>]')
   process.exit(2)
 }
-const routesConfig = JSON.parse(readFileSync(join(QA_DIR, 'routes', `${appName}.json`), 'utf8'))
 const repoRoot = realpathSync(git(['rev-parse', '--show-toplevel'], cwdOption))
-const appRel = join('apps', appName)
+// 앱 폴더(레포 루트 기준) — 모노레포 apps/<앱>, 단일 레포는 '' · 화면 폴더(pages/·app/, src/ 포함)
+const appRel = qaApp.dir
+const routerRel = routerDirOf(join(repoRoot, appRel)) ?? 'pages'
 const planPath = option('plan')
 
 // 세션 프로필 — --profile 이 없으면 로그인 세션이 있는 첫 프로필, 없으면 logout
@@ -420,10 +433,10 @@ async function openLivePage() {
   say(up ? `📺 실시간 화면 — ${liveUrl}` : `📺 현황판이 꺼져 있다 — scripts/board.sh 로 띄운 뒤 ${liveUrl}`)
 }
 
-// 저장한 세션의 로그인 토큰(B_AT*) 만료 시각 — 지났으면 그 시각(ms), 아니면 null. 쿠키 값은 읽지 않는다
+// 저장한 세션의 로그인 토큰(server.tokenCookie) 만료 시각 — 지났으면 그 시각(ms), 아니면 null. 쿠키 값은 읽지 않는다
 function expiredSessionAt(file) {
   const { cookies = [] } = JSON.parse(readFileSync(file, 'utf8'))
-  const token = cookies.find((cookie) => cookie.name.startsWith('B_AT') && cookie.expires > 0)
+  const token = sessionToken(cookies, SERVER)
   return token && token.expires * 1000 < Date.now() ? token.expires * 1000 : null
 }
 const expiredMessage = (profileName, session, expiredAt) =>
@@ -452,9 +465,10 @@ function loadImpact() {
   }
 }
 
-// 라우트 → Pages Router 화면 파일 (/help/faq → apps/<앱>/pages/help/faq/index.tsx 또는 faq.tsx) · App Router 앱이면 없다(null)
+// 라우트 → Pages Router 화면 파일 (/help/faq → <앱 폴더>/pages/help/faq/index.tsx 또는 faq.tsx) · App Router 앱이면 없다(null)
 function pageFileOf(route) {
-  const base = join(appRel, 'pages', route === '/' ? 'index' : route)
+  if (!routerRel.endsWith('pages')) return null
+  const base = join(appRel, routerRel, route === '/' ? 'index' : route)
   return [`${base}.tsx`, join(base, 'index.tsx'), `${base}.ts`, join(base, 'index.ts')].find((candidate) => existsSync(join(repoRoot, candidate))) ?? null
 }
 
@@ -522,11 +536,12 @@ function runStep(command, args, cwd, logFile) {
   execFileSync(command, args, { cwd, stdio: ['ignore', output, output] })
 }
 
-// 새 워크트리에는 node_modules 가 없다 — 영향 분석(tsconfig extends)과 dev 서버 둘 다 필요하다
+// 새 워크트리에는 node_modules 가 없다 — 영향 분석(tsconfig extends)과 dev 서버 둘 다 필요하다. 패키지 관리자는 lockfile 로
 function ensureDependencies(root, label, logFile = join(runDir, `server-${label}.log`)) {
   if (existsSync(join(root, 'node_modules'))) return
-  setPhase(`${label}: 의존성 설치 (pnpm install)`)
-  runStep('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], root, logFile)
+  const [command, ...args] = packageManager(root).install
+  setPhase(`${label}: 의존성 설치 (${command} ${args[0]})`)
+  runStep(command, args, root, logFile)
 }
 
 async function startDevServer(root, port, label) {
@@ -534,21 +549,19 @@ async function startDevServer(root, port, label) {
   const logFile = join(runDir, `server-${label}.log`)
   writeFileSync(logFile, '')
   ensureDependencies(root, label, logFile)
-  // 앱마다 스크립트 이름이 다르다 — env 생성(gen:env)·Relay(gen:relay · care 는 relay) 는 있는 것만
+  // 준비 단계(routes server.prepare — 예: env 생성·Relay 생성) — 앱 package.json 에 있는 스크립트만. unless 파일이 앱 폴더에 있으면 건너뛴다
+  // (.env 는 워크트리 생성 때 복사된다 — wt-copy-local.sh. 내용은 출력하지 않는다)
+  const manager = packageManager(root)
   const scripts = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8')).scripts ?? {}
-  // .env 는 워크트리 생성 때 복사된다(wt-copy-local.sh). 없을 때만 SSM 에서 만든다 — 내용은 출력하지 않는다
-  if (!existsSync(join(appDir, '.env')) && scripts['gen:env']) {
-    setPhase(`${label}: env 생성 (gen:env)`)
-    runStep('pnpm', ['gen:env'], appDir, logFile)
-  }
-  const relayScript = ['gen:relay', 'relay'].find((name) => scripts[name])
-  if (relayScript) {
-    setPhase(`${label}: Relay 생성 (${relayScript})`)
-    runStep('pnpm', [relayScript], appDir, logFile)
+  for (const step of SERVER.prepare) {
+    if (!scripts[step.script] || (step.unless && existsSync(join(appDir, step.unless)))) continue
+    setPhase(`${label}: 준비 (${step.script})`)
+    runStep(manager.run[0], [...manager.run.slice(1), step.script], appDir, logFile)
   }
   setPhase(`${label}: dev 서버 기동 :${port}`)
   const output = openSync(logFile, 'a')
-  const child = spawn('pnpm', ['exec', 'next', 'dev', '-p', String(port), '--webpack'], { cwd: appDir, stdio: ['ignore', output, output], detached: true })
+  const [command, ...args] = devCommand(SERVER, manager, port)
+  const child = spawn(command, args, { cwd: appDir, stdio: ['ignore', output, output], detached: true })
   servers.push({ child, label })
   const url = `http://localhost:${port}`
   await waitForServer(url, 240000, label)
@@ -558,7 +571,7 @@ async function startDevServer(root, port, label) {
 
 // 기준 화면용 워크트리 — merge-base 에 detach 해서 재사용한다(.worktrees/<레포>/qa-base)
 function prepareBaseWorktree(baseSha) {
-  const repoName = QA_REPO
+  const repoName = qaApp.repo
   const basePath = join(HERMES, '.worktrees', repoName, 'qa-base')
   if (!existsSync(basePath)) {
     git(['worktree', 'add', '--detach', basePath, baseSha], repoRoot)
@@ -1032,11 +1045,11 @@ function judge(target, viewportResults) {
 }
 
 // ── 세션 지키기 — 검사 중에 로그인이 풀리면 멈추고 로그인을 받는다 ──────────────
-// 토큰 쿠키(B_AT*)가 검사 컨텍스트에 있는지로 본다. 없으면 run.gate 를 띄우고(라이브 화면 띠) login.mjs 창을 연다 →
+// 로그인 쿠키(server.tokenCookie)가 검사 컨텍스트에 있는지로 본다. 없으면 run.gate 를 띄우고(라이브 화면 띠) login.mjs 창을 연다 →
 // 저장되면 새 쿠키를 검사 컨텍스트에 넣고 이어 간다. 동시에 여러 화면이 걸려도 로그인 창은 하나(relogin 약속을 같이 기다린다)
 let relogin = null
 let sessionGaveUp = false
-const sessionAlive = async (contextList) => (await Promise.all(contextList.map(async (context) => (await context.cookies()).some((cookie) => cookie.name.startsWith('B_AT') && cookie.value)))).every(Boolean)
+const sessionAlive = async (contextList) => (await Promise.all(contextList.map(async (context) => hasLoginCookie(await context.cookies(), SERVER)))).every(Boolean)
 async function guardSession(contextList, headUrl) {
   if (!profile.session) return true
   if (await sessionAlive(contextList)) return true
@@ -1046,7 +1059,7 @@ async function guardSession(contextList, headUrl) {
 }
 async function requestLogin(contextList, headUrl, customMessage = '') {
   const started = run.screens.some((screen) => !['queued', 'running'].includes(screen.status))
-  run.gate = { profile: profileName, status: 'waiting', since: new Date().toISOString(), message: customMessage || `${started ? '로그인이 풀렸어요' : `${profileName} 상태로 검수하려면 로그인해 주세요`} — 열린 창에서 ${started ? '다시 ' : ''}로그인${profileName === 'verified' ? '(+ 휴대폰 본인인증)' : ''}해 주시면 ${started ? '멈춘 화면부터 ' : ''}이어서 검사해요(10분)${profile.note ? ` · ${profile.note}` : ''}` }
+  run.gate = { profile: profileName, status: 'waiting', since: new Date().toISOString(), message: customMessage || `${started ? '로그인이 풀렸어요' : `${profileName} 상태로 검수하려면 로그인해 주세요`} — 열린 창에서 ${started ? '다시 ' : ''}로그인해 주시면 ${started ? '멈춘 화면부터 ' : ''}이어서 검사해요(10분)${profile.note ? ` · ${profile.note}` : ''}` }
   saveRun()
   say(`🔑 ${run.gate.message}`)
   const code = await new Promise((resolve) => {
@@ -1110,14 +1123,12 @@ async function main() {
   if (!run.screens.some((screen) => screen.url) && !fromSitemap && !scenariosOnly) return finish()
 
   // 작업 트리가 곧 기준 워크트리면 같은 코드라 비교할 게 없고, 한 폴더에 dev 서버 둘은 Next 가 막는다
-  const sameAsBase = repoRoot === join(HERMES, '.worktrees', QA_REPO, 'qa-base')
+  const sameAsBase = repoRoot === join(HERMES, '.worktrees', qaApp.repo, 'qa-base')
   if (sameAsBase && !flag('no-base') && !suite) say('작업 트리가 기준 워크트리(qa-base)라 전·후 비교를 건너뜀')
   const useBase = !flag('no-base') && !sameAsBase && !suite
   if (suite) say(`전체 검수 — ${target === 'server' ? `☁️ 서버 ${serverUrl}` : '🖥 로컬 서버'} · 승인한 기준 사진과 비교 (.qa-baselines/${targetKey(appName, target)}/${profileName})`)
   if (useBase && !option('base-url')) {
-    const config = loadConfig(HERMES)
-    const prBase = config.repos.find((repo) => repo.name === QA_REPO)?.apps?.[appName]?.prBase ?? 'dev'
-    const baseRef = option('base') || `origin/${prBase}`
+    const baseRef = option('base') || `origin/${qaApp.prBase}`
     const baseSha = git(['merge-base', baseRef, 'HEAD'], repoRoot)
     run.base = { ref: baseRef, sha: baseSha.slice(0, 9) }
   }
@@ -1132,14 +1143,14 @@ async function main() {
   // 작업 서버와 기준 서버를 함께 띄운다
   // dev 서버 대상이면 띄우지 않고 배포본 주소를 쓴다
   const devTargetUrl = target === 'server' ? serverUrl : null
-  const headUrlPromise = option('head-url') ? Promise.resolve(option('head-url')) : devTargetUrl ? Promise.resolve(devTargetUrl) : startDevServer(repoRoot, 3291, 'head')
+  const headUrlPromise = option('head-url') ? Promise.resolve(option('head-url')) : devTargetUrl ? Promise.resolve(devTargetUrl) : startDevServer(repoRoot, SERVER.port, 'head')
   const baseUrlPromise = !useBase
     ? Promise.resolve(null)
     : option('base-url')
       ? Promise.resolve(option('base-url'))
       : Promise.resolve().then(() => {
           setPhase(`base: 기준 워크트리 준비 @ ${run.base.sha}`)
-          return startDevServer(prepareBaseWorktree(run.base.sha), 3292, 'base')
+          return startDevServer(prepareBaseWorktree(run.base.sha), SERVER.basePort, 'base')
         })
   const [headUrl, baseUrl] = await Promise.all([headUrlPromise, baseUrlPromise])
   run.urls = { head: headUrl, base: baseUrl }

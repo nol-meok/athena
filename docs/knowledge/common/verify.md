@@ -19,15 +19,28 @@
 
 **엄격 모드**(`ATHENA_VERIFY_STRICT=1`, `scripts/commit.sh` 가 켠다 — 커밋 전 검증): 건너뜀(⏭)도 ❌ 실패로 친다. 허용은 사용자 확인 후 `commit.sh --allow-skip "<단계 이름>"`(= `ATHENA_VERIFY_ALLOW_SKIP`)으로만. `ATHENA_VERIFY_DIR` 가 그 레포의 워크트리가 아니면 메인 체크아웃으로 돌지 않고 exit 2 로 멈춘다.
 
-## QA 시뮬레이션 (영향 화면 실제 브라우저 검사 — 대상 앱은 팩 설정 `qa`)
+## QA 시뮬레이션 (영향 화면 실제 브라우저 검사 — 대상 앱은 팩에 등록한 화면 레포)
 
-화면 목록(`impact.mjs`)은 Pages Router(`pages/**`)와 App Router(`app/**/page.tsx` — 라우트 그룹 `(x)` 는 주소에서 빼고, `layout`·`loading`·`error` 등이 바뀌면 그 폴더 아래 화면 전부, 로그인 표시는 화면과 감싸는 layout 의 `…AuthGuard`)를 둘 다 읽는다. 실제로 돌리려면 앱마다 `scripts/qa/routes/<앱>.json` 이 있어야 한다(현황판 [전체 검수] 앱 목록도 이 파일 기준).
+화면 목록(`impact.mjs`)은 Pages Router(`pages/**`)와 App Router(`app/**/page.tsx` — 라우트 그룹 `(x)` 는 주소에서 빼고, `layout`·`loading`·`error` 등이 바뀌면 그 폴더 아래 화면 전부, 로그인 표시는 화면과 감싸는 layout 의 `…AuthGuard`)를 둘 다 읽는다(앱 폴더의 `app/`·`pages/`, `src/` 아래도). 대상 앱은 팩 `repos` 에서 정해진다(`scripts/qa/apps.mjs` — 단일 레포 = 앱 하나, 모노레포 = 앱마다, 백엔드·패키지 제외 · `docs/pack.md` "QA 대상 앱"). 실제로 돌리려면 앱마다 `scripts/qa/routes/<앱>.json` 이 있어야 한다(현황판 [전체 검수] 앱 목록도 이 파일 기준) — 초안은 `node scripts/qa/init-app.mjs --app <앱>`(운영 기준 ref 의 화면 목록으로 routes·TC 초안, 있는 파일은 덮지 않는다).
+
+**앱 설정**(`routes/<앱>.json`) — 코어에 앱마다 다른 값을 적지 않는다. `$` 로 시작하는 키(`$comment`·`$todo`)는 읽지 않는다.
+
+| 키 | 뜻 |
+|---|---|
+| `server.port` · `server.basePort` | 작업·기준 dev 서버 포트(기본 3291 · port+1). 두 앱을 번갈아 돌려도 한 번에 하나라 겹쳐도 된다 |
+| `server.dev` | 띄우는 명령(앱 폴더에서, `{port}` 치환) — 기본 `<패키지 관리자 exec> next dev -p {port}`. 패키지 관리자는 lockfile 로(pnpm·yarn·npm) |
+| `server.prepare` | dev 전에 돌릴 package.json 스크립트 — `"gen:relay"` 또는 `{ "script": "gen:env", "unless": ".env" }`(그 파일이 앱 폴더에 있으면 건너뜀). 기본 없음 |
+| `server.tokenCookie` | 로그인하면 생기는 쿠키 이름 앞부분 — 세션이 살아 있나·만료 시각을 이걸로 본다(값은 읽지 않는다). 없으면 세션 파일이 있으면 살아 있다고 본다 |
+| `server.localPorts` | 사람이 따로 띄워 둔 dev 서버 포트 — 현황판 [로그인] 이 `port` 다음으로 찾는다 |
+| `signInPath` · `signOutPath` · `authPaths` | 로그인 화면 · 로그인 중 거치는 경로(간편인증 콜백 등 — 없으면 앞 둘). login.mjs 는 이 경로 밖으로 나오고 로그인 쿠키가 생겨야 끝난 것으로 본다 |
+| `globalPaths` | 바뀌면 화면 전부가 영향인 경로 앞부분(레포 루트 기준 — 예 공통 tsconfig 패키지). `next.config.*`·`middleware`·`_app`·lockfile 등은 기본으로 친다 |
+| `devUrl` · `profiles` · `routes` · `viewports` · … | 서버 대상 기본 주소 · 세션 프로필 · 화면별 설정(`samples`·`entry`·`skip`·`expect`) · 뷰포트 |
 검증 스크립트(lint·타입·테스트)와 별개다. **화면을 URL 로 바로 여는 스모크**라 흐름(본인인증 끝까지 등)은 보지 않는다(2차 — 계획서 D10). 바꾼 파일에서 import 를 거꾸로 따라가 **영향받는 화면을 전부** 찾고, 작업 워크트리와 기준(`origin/<prBase>` merge-base) dev 서버를 함께 띄워 Playwright 로 화면마다 연다(데스크톱·모바일). 계획서 `plans/feature/20261002-QA-시뮬레이션-영향-화면.md`.
 
 ```bash
 node scripts/qa/impact.mjs --cwd <워크트리> --app <앱>          # 영향 화면만 본다 (빠름, 서버 안 띄움)
 node scripts/qa/run.mjs --cwd <워크트리> --app <앱> --plan <계획서> # 실제 실행 → 계획서 Checkpoint 에 "- QA result:" 한 줄
-node scripts/qa/login.mjs --url http://localhost:3291                  # 로그인 세션 저장 (한 번, 사용자가 직접 **이메일** 로그인)
+node scripts/qa/login.mjs --app <앱> --url http://localhost:<port>        # 로그인 세션 저장 (한 번, 사용자가 직접 **이메일** 로그인)
 node scripts/qa/run.mjs … --headed [--slow 1200]                         # 보이는 창으로 — 창 하나에서 화면 이동 · 진행 띠 · 천천히 스크롤
 node scripts/qa/history.mjs [--open [런 id]] [--plan <계획서>]          # QA 이력 (.qa-runs/index.html · 런마다 report.html)
 # 현황판(/board) [QA] 탭 — 같은 이력을 실시간으로. 계획서 카드 [QA 실행] 으로도 돌린다(한 번에 하나)
@@ -67,7 +80,7 @@ node scripts/qa/approve.mjs <런 id> [--key <화면>]                           
 | 📝 샘플 필요 | 동적 라우트인데 열 URL 이 없다 — `routes/<앱>.json` 의 `samples` 에 적는다 |
 
 - 영향 분석은 **넓게 잡는다**: 패키지 진입점(`index.ts` barrel)을 거치면 그 패키지를 쓰는 화면이 모두 잡힌다(예: `@repo/user-session` 의 `AuthGuard` 하나 → 102개). `_app`·`next.config`·`proxy.ts`·루트 `package.json`·lock 은 화면 전부
-- 산출물은 `.qa-runs/<런 id>/`(git 무시 · 지우지 않고 쌓인다), 세션은 `.qa-auth/`(git 무시·권한 600 — 쿠키 값을 출력하지 않는다). 기준 서버용 워크트리 `.worktrees/<qa.repo>/qa-base` 는 재사용한다
+- 산출물은 `.qa-runs/<런 id>/`(git 무시 · 지우지 않고 쌓인다), 세션은 `.qa-auth/`(git 무시·권한 600 — 쿠키 값을 출력하지 않는다). 기준 서버용 워크트리 `.worktrees/<레포>/qa-base` 는 재사용한다
 - 포트: 작업 3291 · 기준 3292. 첫 실행은 `pnpm install`·webpack 첫 컴파일로 느리다
 - 기준 화면에도 있던 에러는 이번 변경 탓이 아니라 실패로 세지 않는다(`baseProblems` 로 개수만 남긴다)
 

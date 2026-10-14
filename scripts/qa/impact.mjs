@@ -3,10 +3,11 @@
  * 영향 화면 산출 — 변경 파일에서 import 를 거꾸로 따라가 그 파일을 쓰는 화면(라우트)을 모두 찾는다.
  * 계획서: plans/feature/20261002-QA-시뮬레이션-영향-화면.md (D4 dependency-cruiser · D9 가까운 화면부터)
  *
- *   node scripts/qa/impact.mjs --cwd <레포 또는 워크트리> --app refund-web [--base <ref>] [--files a,b] [--json]
+ *   node scripts/qa/impact.mjs --cwd <레포 또는 워크트리> --app <앱> [--base <ref>] [--files a,b] [--json]
  *
- *   --cwd    모노레포 루트(또는 그 안 아무 곳). 워크트리면 워크트리 경로
- *   --app    설정 qa.repo(모노레포)의 앱 이름 — Pages Router·App Router 둘 다
+ *   --cwd    그 앱의 레포 루트(또는 그 안 아무 곳). 워크트리면 워크트리 경로. 없으면 repos/<레포>
+ *   --app    팩에 등록한 앱(scripts/qa/apps.mjs — 단일 레포는 레포 이름, 모노레포는 앱 이름). 설정이 있는 앱이 하나면 생략 가능
+ *            Pages Router·App Router 둘 다(앱 폴더의 app/·pages/·src/app/·src/pages/)
  *            App Router 는 화면 = app/…/page.tsx, 라우트 그룹 (x) 는 주소에서 뺀다. layout·template·loading·error·not-found 는
  *            import 로 이어지지 않으므로 "그 폴더 아래 화면 전부" 로 친다(루트 layout 이 바뀌면 화면 전부)
  *   --base   비교 기준 ref. 기본은 그 앱의 prBase(origin/<prBase>) — merge-base 부터의 변경 + 미커밋 + 추적 안 된 파일
@@ -24,6 +25,7 @@ import { fileURLToPath } from 'node:url'
 import { cruise } from 'dependency-cruiser'
 import extractTSConfig from 'dependency-cruiser/config-utl/extract-ts-config'
 import { loadConfig } from '../lib/config.mjs'
+import { listQaApps, findQaApp, defaultQaApp, readRoutes, inApp, routerDirOf, isScreenPath, routeOfPath } from './apps.mjs'
 
 const HERMES = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const argv = process.argv.slice(2)
@@ -33,9 +35,15 @@ const option = (name) => {
 }
 const flag = (name) => argv.includes(`--${name}`)
 
-const QA = loadConfig(HERMES).qa ?? {}
-const appName = option('app') || Object.keys(QA.apps ?? {})[0] || ''
-const cwdOption = option('cwd') || join(HERMES, 'repos', QA.repo ?? '')
+const config = loadConfig(HERMES)
+const appName = option('app') || defaultQaApp(config) || ''
+const qaApp = findQaApp(config, appName)
+if (!qaApp) {
+  console.error(`⚠️  ${appName ? `QA 대상 앱이 아니다: ${appName}` : 'QA 대상 앱을 골라 주세요(--app)'} — ${listQaApps(config).map((entry) => entry.app).join(', ') || '팩에 등록한 화면 레포가 없다'}`)
+  process.exit(2)
+}
+const routesConfig = readRoutes(appName) ?? {}
+const cwdOption = option('cwd') || join(HERMES, 'repos', qaApp.repo)
 if (!existsSync(cwdOption)) {
   console.error(`⚠️  --cwd 경로가 없다: ${cwdOption}`)
   process.exit(2)
@@ -44,42 +52,37 @@ if (!existsSync(cwdOption)) {
 const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 // 심볼릭 링크(repos/…)를 실제 경로로 — dependency-cruiser 는 링크 경로와 실제 경로가 섞이면 패키지를 못 읽는다
 const repoRoot = realpathSync(git(['rev-parse', '--show-toplevel'], cwdOption))
-const appDir = join('apps', appName)
+// 앱 폴더(레포 루트 기준) — 모노레포 apps/<앱>, 단일 레포는 '' (레포 루트)
+const appDir = qaApp.dir
 const appAbs = join(repoRoot, appDir)
-// 라우터 — app/ 이 있으면 App Router, 아니면 pages/(Pages Router)
-const router = existsSync(join(appAbs, 'app')) ? 'app' : existsSync(join(appAbs, 'pages')) ? 'pages' : null
-if (!router) {
-  console.error(`⚠️  ${appDir} 에 app/ 도 pages/ 도 없다`)
+// 라우터 — app/ 이 있으면 App Router, 아니면 pages/(Pages Router). src/ 아래도 본다
+const routerDir = routerDirOf(appAbs)
+if (!routerDir) {
+  console.error(`⚠️  ${appDir || repoRoot} 에 app/·pages/(src/ 포함)가 없다 — Next.js 화면 앱이 아니면 QA 대상이 아니다`)
   process.exit(2)
 }
-const screenRoot = `${appDir}/${router}/`
+const router = routerDir.endsWith('app') ? 'app' : 'pages'
+const screenRoot = `${inApp(appDir, routerDir)}/`
 
 if (!existsSync(join(repoRoot, 'node_modules'))) {
-  console.error(`⚠️  ${repoRoot} 에 node_modules 가 없다 — tsconfig 가 @repo/project-config 를 extends 해서 먼저 pnpm install 이 필요하다 (run.mjs 는 알아서 한다)`)
+  console.error(`⚠️  ${repoRoot} 에 node_modules 가 없다 — tsconfig·workspace 패키지를 읽으려면 먼저 의존성 설치가 필요하다 (run.mjs 는 알아서 한다)`)
   process.exit(2)
 }
 
-const config = loadConfig(HERMES)
-const monorepo = config.repos.find((repo) => repo.name === QA.repo)
-const prBase = monorepo?.apps?.[appName]?.prBase ?? 'dev'
+const prBase = qaApp.prBase
 
-// 앱 밖이어도 이 앱 전체에 닿는 파일 — 바뀌면 모든 화면이 영향 범위
+// 이 앱 전체에 닿는 파일 — 바뀌면 모든 화면이 영향 범위. 레포마다 더 있으면 routes/<앱>.json globalPaths(레포 루트 기준 경로 앞부분)
 const GLOBAL_FILES = [
-  `${appDir}/pages/_app.tsx`,
-  `${appDir}/pages/_document.tsx`,
-  `${appDir}/pages/_error.tsx`,
-  `${appDir}/next.config.mjs`,
-  `${appDir}/proxy.ts`,
-  `${appDir}/middleware.ts`,
-  `${appDir}/instrumentation.ts`,
-  `${appDir}/tailwind.config.ts`,
-  `${appDir}/postcss.config.mjs`,
-  `${appDir}/package.json`,
-  `${appDir}/tsconfig.json`,
+  ...(router === 'pages' ? ['_app', '_document', '_error'].flatMap((name) => ['tsx', 'jsx', 'ts', 'js'].map((extension) => `${screenRoot}${name}.${extension}`)) : []),
+  ...['next.config.js', 'next.config.mjs', 'next.config.ts', 'proxy.ts', 'middleware.ts', 'src/middleware.ts', 'instrumentation.ts', 'src/instrumentation.ts',
+    'tailwind.config.ts', 'tailwind.config.js', 'postcss.config.mjs', 'postcss.config.js', 'package.json', 'tsconfig.json'].map((file) => inApp(appDir, file)),
   'package.json',
-  'pnpm-lock.yaml'
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'package-lock.json'
 ]
-const isGlobalFile = (file) => GLOBAL_FILES.includes(file) || file.startsWith('packages/project-config/')
+const GLOBAL_PATHS = routesConfig.globalPaths ?? []
+const isGlobalFile = (file) => GLOBAL_FILES.includes(file) || GLOBAL_PATHS.some((prefix) => file.startsWith(prefix))
 
 // ── 1) 변경 파일 ─────────────────────────────────────────
 function changedFiles() {
@@ -96,30 +99,12 @@ function changedFiles() {
 }
 
 // ── 2) 화면 목록 (Pages Router · App Router) ─────────────
-const SPECIAL_PAGES = new Set(['_app', '_document', '_error'])
 // App Router 에서 import 없이 Next 가 화면을 감싸는 파일 — 바뀌면 그 폴더 아래 화면 전부
 const SEGMENT_FILES = new Set(['layout', 'template', 'loading', 'error', 'not-found', 'default', 'global-error'])
 const CODE_FILE = /\.(tsx|ts|jsx|js)$/
-// 라우트 그룹 (x)·병렬 슬롯 @x 는 주소에 안 나온다
-const urlSegments = (inside) => inside.split('/').filter((segment) => segment && !/^\(.*\)$/.test(segment) && !segment.startsWith('@'))
-function routeOf(pageFile) {
-  const inside = pageFile.slice(screenRoot.length).replace(CODE_FILE, '')
-  if (router === 'app') {
-    // apps/<앱>/app/(authenticated)/chat/[id]/page.tsx → /chat/[id]
-    return `/${urlSegments(inside.replace(/(^|\/)page$/, '')).join('/')}`
-  }
-  // apps/refund-web/pages/help/faq/index.tsx → /help/faq
-  const route = `/${inside}`.replace(/\/index$/, '')
-  return route || '/'
-}
-function isScreen(file) {
-  if (!file.startsWith(screenRoot) || !CODE_FILE.test(file)) return false
-  const inside = file.slice(screenRoot.length)
-  const baseName = inside.split('/').pop().replace(/\.\w+$/, '')
-  if (router === 'app') return baseName === 'page' && !inside.split('/').some((segment) => segment.startsWith('@') || segment.startsWith('(.'))
-  if (inside.startsWith('api/')) return false
-  return !SPECIAL_PAGES.has(baseName)
-}
+// 화면 파일 → 주소(라우트) · 화면인가 — 규칙은 apps.mjs(init-app.mjs 와 같이 쓴다)
+const routeOf = (pageFile) => routeOfPath(pageFile.slice(screenRoot.length), router)
+const isScreen = (file) => file.startsWith(screenRoot) && isScreenPath(file.slice(screenRoot.length), router)
 // App Router 의 layout 등 — 그 파일이 있는 폴더(app/ 기준)
 function segmentDirOf(file) {
   if (router !== 'app' || !file.startsWith(screenRoot) || !CODE_FILE.test(file)) return null
@@ -135,7 +120,7 @@ async function buildGraph() {
   process.chdir(repoRoot)
   try {
     const result = await cruise(
-      [`${appDir}/${router}`],
+      [screenRoot.slice(0, -1)],
       {
         baseDir: repoRoot,
         tsPreCompilationDeps: true,

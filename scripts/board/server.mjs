@@ -45,6 +45,7 @@ import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './ar
 import { applyLearn, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
 import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
+import { listQaApps, findQaApp, appOfAgent, readRoutes, serverSettings, sessionToken } from '../qa/apps.mjs'
 import { approveRun as approveQaRun } from '../qa/baseline.mjs'
 import { explainProblems } from '../qa/explain.mjs'
 import { createHash, randomBytes } from 'node:crypto'
@@ -705,7 +706,8 @@ const BOOT = randomBytes(6).toString('hex')
 const PAGE_CONFIG = JSON.stringify({
   githubOrg: ORG,
   agents: [...AGENT_NAMES],
-  qaApps: config.qa?.apps ?? {},
+  // QA 대상 앱 이름 → 화면 이름 — 팩에 등록한 화면 레포에서(scripts/qa/apps.mjs)
+  qaApps: Object.fromEntries(listQaApps(config).map((entry) => [entry.app, entry.label])),
   qaExampleUrl: config.qa?.exampleUrl ?? 'https://dev.example.com',
 }).replace(/</g, '\\u003c')
 const page = readFileSync(join(ROOT, 'scripts/board/index.html'), 'utf8').replace('__BOARD_TOKEN__', TOKEN).replace('__BOARD_BOOT__', BOOT)
@@ -1023,7 +1025,7 @@ const qaSummary = (run) => ({
   screens: run.screens?.length ?? 0, finished: (run.screens ?? []).filter((screen) => !['queued', 'running'].includes(screen.status)).length,
   ...(qaStale(run) ? { status: 'error', error: '응답 없음 — 중단된 런' } : {})
 })
-// 돌고 있는 런 — run.json 이 2분 안에 갱신됐고 끝나지 않은 것(포트 3291·3292 를 쓰므로 한 번에 하나)
+// 돌고 있는 런 — run.json 이 2분 안에 갱신됐고 끝나지 않은 것(로컬 서버 포트를 쓰고 무겁기 때문에 한 번에 하나)
 function activeQaRun() {
   for (const run of listQaRuns().slice(0, 5)) {
     if (!['preparing', 'running'].includes(run.status)) continue
@@ -1032,7 +1034,8 @@ function activeQaRun() {
   }
   return null
 }
-// 계획서 카드 → QA 대상: Work ref 맨 앞의 워크트리(절대 경로) + 담당 에이전트의 앱(routes/<앱>.json 이 있는 것만 — 파일럿 refund-web)
+// 계획서 카드 → QA 대상: Work ref 맨 앞의 워크트리(절대 경로) + 담당 에이전트의 앱(팩에 등록한 레포의 앱 — routes/<앱>.json 이 있는 것만).
+// 담당 에이전트로 못 찾으면 워크트리가 어느 레포의 것인지(.worktrees/<레포>/…)로 고른다 — 그 레포 앱이 하나일 때만
 function startQaRun(planId) {
   const path = safePath(planId, 'plans')
   if (!path) return { error: '계획서를 찾지 못했어요' }
@@ -1041,9 +1044,10 @@ function startQaRun(planId) {
   const worktree = workRef.replace(/`/g, '')
   if (!worktree.startsWith('/') || !existsSync(worktree)) return { error: 'Work ref 에 워크트리 경로가 없어요 — 담당 에이전트가 브랜치를 만든 뒤에 돌릴 수 있어요' }
   const agent = text.match(/^- Agent:\s*(\S+)/m)?.[1] ?? ''
-  const apps = config.repos.find((repo) => repo.name === config.qa?.repo)?.apps ?? {}
-  const app = Object.entries(apps).find(([, settings]) => settings.agent === agent)?.[0] ?? Object.keys(apps).find((name) => existsSync(join(worktree, 'apps', name)) && existsSync(join(ROOT, 'scripts', 'qa', 'routes', `${name}.json`)))
-  if (!app || !existsSync(join(ROOT, 'scripts', 'qa', 'routes', `${app}.json`))) return { error: `QA 시뮬레이션 설정이 있는 앱이 아니에요 (scripts/qa/routes/<앱>.json)${agent ? ` — 이 계획서는 ${agent}` : ''}` }
+  const repoOfTree = relative(join(ROOT, '.worktrees'), worktree).split(sep)[0]
+  const sameRepo = listQaApps(config).filter((entry) => entry.repo === repoOfTree && entry.configured)
+  const app = (appOfAgent(config, agent) ?? (sameRepo.length === 1 ? sameRepo[0] : null))?.app
+  if (!app || !findQaApp(config, app)?.configured) return { error: `QA 시뮬레이션 설정이 있는 앱이 아니에요 (scripts/qa/routes/<앱>.json — 없으면 node scripts/qa/init-app.mjs --app <앱>)${agent ? ` — 이 계획서는 ${agent}` : ''}` }
   // 방금 띄운 런은 run.json 을 쓰기 전일 수 있다 — 이 서버가 띄운 프로세스가 살아 있으면 먼저 거부
   if (qaChild && qaChild.exitCode === null && qaChild.signalCode === null) return { error: '이 현황판이 띄운 QA 가 아직 돌고 있어요 — QA 탭에서 진행을 보세요' }
   const running = activeQaRun()
@@ -1070,23 +1074,20 @@ function heavyLockState() {
   return { holder, waiting: launched && !activeQaRun() }
 }
 
-// 전체 검수 가능한 앱 — scripts/qa/routes/<앱>.json 이 있는 것. 프로필마다 세션이 저장돼 있는지
+// 전체 검수 가능한 앱 — 팩에 등록한 화면 레포의 앱 중 scripts/qa/routes/<앱>.json 이 있는 것. 프로필마다 세션이 저장돼 있는지
 function qaApps() {
-  const dir = join(ROOT, 'scripts', 'qa', 'routes')
-  if (!existsSync(dir)) return []
-  return readdirSync(dir).filter((name) => name.endsWith('.json')).map((name) => {
-    const app = name.replace(/\.json$/, '')
-    const config = JSON.parse(readFileSync(join(dir, name), 'utf8'))
+  return listQaApps(config).filter((entry) => entry.configured).map(({ app, label }) => {
+    const config = readRoutes(app)
     // 세션은 대상(D21 — 로컬 서버·dev 서버)마다 따로 저장된다
     const profiles = Object.entries(config.profiles ?? {}).filter(([key]) => !key.startsWith('$')).map(([key, settings]) => ({
       name: key, note: settings.note ?? '',
       session: !settings.session || existsSync(join(ROOT, '.qa-auth', `${app}.${settings.session}.json`))
     }))
     const scenarioDir = join(ROOT, 'scripts', 'qa', 'scenarios', app)
-    return { app, profiles, devUrl: config.devUrl ?? null, local: config.local !== false, scenarios: existsSync(scenarioDir) ? readdirSync(scenarioDir).filter((file) => file.endsWith('.json')).length : 0 }
+    return { app, label, profiles, devUrl: config.devUrl ?? null, local: config.local !== false, scenarios: existsSync(scenarioDir) ? readdirSync(scenarioDir).filter((file) => file.endsWith('.json')).length : 0 }
   })
 }
-// QA 로그인 세션 상태 — 고른 앱·대상(로컬·서버 주소)의 세션 프로필마다 있는지·만료 시각. 쿠키 값은 읽지 않고 로그인 토큰(B_AT*)의 만료 시각만 본다
+// QA 로그인 세션 상태 — 고른 앱·대상(로컬·서버 주소)의 세션 프로필마다 있는지·만료 시각. 쿠키 값은 읽지 않고 로그인 토큰(routes server.tokenCookie)의 만료 시각만 본다
 function qaSessions(app, target, server) {
   const file = join(ROOT, 'scripts', 'qa', 'routes', `${app}.json`)
   if (!/^[\w-]+$/.test(app) || !existsSync(file)) return { error: '앱 설정이 없어요' }
@@ -1103,7 +1104,7 @@ function qaSessions(app, target, server) {
     if (!existsSync(path)) return { name, state: 'missing' }
     try {
       const { cookies = [] } = JSON.parse(readFileSync(path, 'utf8'))
-      const token = cookies.find((cookie) => cookie.name.startsWith('B_AT') && cookie.expires > 0)
+      const token = sessionToken(cookies, serverSettings(config))
       const expiresAt = token ? token.expires * 1000 : null
       return { name, state: expiresAt && expiresAt < Date.now() ? 'expired' : 'valid', expiresAt, savedAt: statSync(path).mtimeMs }
     } catch { return { name, state: 'missing' } }
@@ -1133,27 +1134,29 @@ function logoutQaSession(app, target, server, profileName) {
   return { ok: true, file: basename(path) }
 }
 // QA 다시 로그인 — 그 세션의 로그인 창(scripts/qa/login.mjs)을 띄운다. 사용자가 로그인을 마치면 세션 파일이 새로 저장된다.
-// 서버 대상은 그 주소로, 로컬은 떠 있는 로컬 서버(3291 → 3200)로. 로그인 창은 한 번에 하나
+// 서버 대상은 그 주소로, 로컬은 떠 있는 로컬 서버(routes server.port → server.localPorts)로. 로그인 창은 한 번에 하나
 let qaLoginChild = null
 async function loginQaSession(app, target, server, profileName) {
   const file = join(ROOT, 'scripts', 'qa', 'routes', `${app}.json`)
   if (!/^[\w-]+$/.test(app) || !existsSync(file)) return { error: '앱 설정이 없어요' }
   if (qaLoginChild && qaLoginChild.exitCode === null) return { error: '로그인 창이 이미 열려 있어요 — 그 창에서 마치거나 닫아 주세요' }
-  const settings = JSON.parse(readFileSync(file, 'utf8')).profiles?.[profileName]
+  const routes = JSON.parse(readFileSync(file, 'utf8'))
+  const settings = routes.profiles?.[profileName]
   if (!settings?.session) return { error: '로그인이 없는 세션이에요' }
+  const local = serverSettings(routes)
   let url
   if (target === 'server') {
     const checked = checkServerUrl(server || '')
     if (checked.error) return { error: checked.error }
     url = checked.url
   } else {
-    for (const candidate of ['http://localhost:3291', 'http://localhost:3200']) {
+    for (const candidate of [local.port, ...local.localPorts].map((port) => `http://localhost:${port}`)) {
       if (await fetch(candidate, { redirect: 'manual' }).then((response) => response.status < 500).catch(() => false)) { url = candidate; break }
     }
   }
   // 로컬 서버가 꺼져 있으면 login.mjs 가 qa-base 로 잠깐 띄운다(--start-local) — 무거운 명령이라 heavy.sh 로(검수가 돌면 차례를 기다린다)
   const startLocal = target !== 'server' && !url
-  if (startLocal) url = 'http://localhost:3291'
+  if (startLocal) url = `http://localhost:${local.port}`
   const args = [join(ROOT, 'scripts', 'qa', 'login.mjs'), '--app', app, '--profile', settings.session, ...(target === 'server' ? ['--server', url] : ['--url', url]), ...(startLocal ? ['--start-local'] : [])]
   qaLoginChild = startLocal
     ? spawn(join(ROOT, 'scripts', 'heavy.sh'), [process.execPath, ...args], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, ATHENA_AGENT: 'qa-login' } })
@@ -1181,10 +1184,11 @@ function stopQaRun(id, groupId) {
     for (const run of listQaRuns().filter((entry) => entry.group === groupId && entry.status === 'running')) {
       if (isNode(run.pid)) { process.kill(run.pid, 'SIGTERM'); stopped.push(run.pid) }
     }
-    // 로컬 흐름은 첫 단계가 남긴 dev 서버(3291)를 묶음 프로세스가 끝에 끈다 — 묶음을 껐으니 여기서 끈다
+    // 로컬 흐름은 첫 단계가 남긴 dev 서버(routes server.port)를 묶음 프로세스가 끝에 끈다 — 묶음을 껐으니 여기서 끈다
     if (group.target !== 'server') {
       try {
-        const pid = execFileSync('lsof', ['-nP', '-t', '-iTCP:3291', '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
+        const port = serverSettings(readRoutes(group.app ?? '')).port
+        const pid = execFileSync('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
         const processGroup = Number(execFileSync('ps', ['-o', 'pgid=', '-p', pid], { encoding: 'utf8' }).trim())
         if (processGroup > 1) process.kill(-processGroup, 'SIGTERM')
       } catch { /* 이미 꺼졌다 */ }
@@ -1200,7 +1204,7 @@ function stopQaRun(id, groupId) {
   return { ok: true, stopped: stopped.length }
 }
 // QA TC 목록 — docs/qa/tc/<앱>.md 의 "B) TC" 표를 행 단위로. 문서가 정본이고 여기서는 읽기만 한다
-const QA_TC_APPS = Object.keys(config.qa?.apps ?? {})   // 설정 qa.apps — 앱 이름 → 화면에 보일 이름
+const QA_TC_APPS = listQaApps(config).map((entry) => entry.app)   // 팩에 등록한 화면 레포의 앱 — docs/qa/tc/<앱>.md 가 있는 것만 보인다
 const tableCells = (line) => line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, '|').trim())
 function qaTestCases() {
   const dir = join(ROOT, 'docs', 'qa', 'tc')

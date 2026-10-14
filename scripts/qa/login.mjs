@@ -3,7 +3,7 @@
  * QA 로그인 세션 저장 (D7) — 브라우저 창을 띄우면 사용자가 dev 계정으로 직접 로그인한다.
  * 로그인이 끝나면(간편로그인이면 외부 페이지를 거쳐 이 서버로 돌아와 로그인 화면이 아닐 때) 쿠키·저장소를 .qa-auth/<앱>.json 에 저장한다. run.mjs 가 재사용한다.
  *
- *   node scripts/qa/login.mjs [--app refund-web] [--url http://localhost:3291] [--profile login]
+ *   node scripts/qa/login.mjs [--app <앱>] [--url http://localhost:<server.port>] [--profile login]
  *   node scripts/qa/login.mjs --profile verified --from login --path /auth/ci-request   이어서 본인인증까지 → 다른 프로필로
  *
  *   --profile  저장할 세션 프로필 이름(routes/<앱>.json profiles 의 session). 기본 login
@@ -11,17 +11,19 @@
  *   --path     처음 열 화면(기본 로그인 화면)
  *   ⚠️ 간편로그인(네이버·카카오)은 SSO 가 localhost 로 돌려보내지 않아(운영 도메인으로 감) 세션이 안 생긴다 — 이메일 로그인으로
  *
- *   --url  떠 있는 dev 서버 (run.mjs --keep-servers 로 남긴 3291, 또는 직접 띄운 3200). localhost 쿠키는 포트와 무관하게 공유된다
+ *   --url  떠 있는 dev 서버 (run.mjs --keep-servers 로 남긴 routes server.port, 또는 직접 띄운 server.localPorts). localhost 쿠키는 포트와 무관하게 공유된다
+ *   로그인이 끝난 때 = 이 서버 화면이 로그인 화면(routes authPaths — 없으면 signInPath·signOutPath)이 아니고 로그인 쿠키(server.tokenCookie)가 있을 때
  *
  * 비밀번호는 어디에도 저장하지 않는다. 세션 파일은 git 무시·권한 600 이고, 내용(쿠키 값)은 출력하지 않는다.
  */
-import { readFileSync, mkdirSync, chmodSync, existsSync, openSync } from 'node:fs'
+import { mkdirSync, chmodSync, existsSync, openSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { normalizeTarget, sessionFileOf, sessionKeyOf, checkServerUrl } from './targets.mjs'
 import { loadConfig } from '../lib/config.mjs'
+import { listQaApps, findQaApp, defaultQaApp, readRoutes, serverSettings, packageManager, devCommand, hasLoginCookie } from './apps.mjs'
 
 const QA_DIR = dirname(fileURLToPath(import.meta.url))
 const HERMES = join(QA_DIR, '..', '..')
@@ -31,8 +33,15 @@ const option = (name) => {
   return index >= 0 ? argv[index + 1] ?? '' : ''
 }
 
-const appName = option('app') || 'refund-web'
-const routesConfig = JSON.parse(readFileSync(join(QA_DIR, 'routes', `${appName}.json`), 'utf8'))
+const CONFIG = loadConfig(HERMES)
+const appName = option('app') || defaultQaApp(CONFIG) || ''
+const qaApp = findQaApp(CONFIG, appName)
+const routesConfig = qaApp ? readRoutes(appName) : null
+if (!qaApp || !routesConfig) {
+  console.error(`⚠️  QA 설정이 있는 앱을 골라 주세요(--app) — ${listQaApps(CONFIG).filter((entry) => entry.configured).map((entry) => entry.app).join(', ') || '(없음 — scripts/qa/init-app.mjs 로 초안)'}`)
+  process.exit(2)
+}
+const SERVER = serverSettings(routesConfig)
 // --target server [--server <주소> | --url <주소>] (D21) — 배포된 서버에서 로그인한다. 간편인증도 그 서버로 돌아온다.
 // 세션 파일은 서버 주소(호스트)마다 따로. 운영 주소는 거부
 const target = option('server') ? 'server' : normalizeTarget(option('target'))
@@ -42,7 +51,7 @@ if (checked?.error) {
   console.error(`⛔ ${checked.error}`)
   process.exit(2)
 }
-const origin = target === 'server' ? checked.url : option('url') || 'http://localhost:3291'
+const origin = target === 'server' ? checked.url : option('url') || `http://localhost:${SERVER.port}`
 const authDir = join(HERMES, '.qa-auth')
 const profileName = option('profile') || 'login'
 const authFile = sessionFileOf(HERMES, appName, profileName, target, origin)
@@ -57,15 +66,17 @@ if (fromFile && !existsSync(fromFile)) {
 let localServer = null
 const serverUp = () => fetch(origin, { redirect: 'manual' }).then((response) => response.status < 500).catch(() => false)
 if (!(await serverUp()) && argv.includes('--start-local') && target === 'local') {
-  const appDir = join(HERMES, '.worktrees', loadConfig(HERMES).qa?.repo ?? '', 'qa-base', 'apps', appName)
+  const baseRoot = join(HERMES, '.worktrees', qaApp.repo, 'qa-base')
+  const appDir = join(baseRoot, qaApp.dir)
   if (!existsSync(appDir)) {
     console.error('⚠️  qa-base 워크트리가 없다 — 전체 검수를 한 번 돌리면 생긴다')
     process.exit(2)
   }
-  const port = new URL(origin).port || '3291'
+  const port = new URL(origin).port || String(SERVER.port)
   console.log(`⏳ 로컬 서버 기동 :${port} (qa-base) — 1~3분`)
   const log = openSync(join(HERMES, '.qa-runs', 'login-server.log'), 'w')
-  localServer = spawn('pnpm', ['exec', 'next', 'dev', '-p', port, '--webpack'], { cwd: appDir, stdio: ['ignore', log, log], detached: true })
+  const [command, ...args] = devCommand(SERVER, packageManager(baseRoot), port)
+  localServer = spawn(command, args, { cwd: appDir, stdio: ['ignore', log, log], detached: true })
   const deadline = Date.now() + 4 * 60 * 1000
   while (!(await serverUp())) {
     if (Date.now() > deadline || localServer.exitCode !== null) {
@@ -99,14 +110,16 @@ console.log(fromFile
 
 // 간편로그인(네이버·카카오)은 외부 로그인 페이지 → SSO 서버를 거쳐 이 서버로 돌아온다.
 // 외부 페이지로 나간 순간이 아니라, 이 서버로 돌아와 로그인 화면이 아닐 때 끝난 것으로 본다
-// /redirect(간편인증이 code 를 들고 돌아오는 곳)는 아직 토큰을 받기 전이다. 그리고 로그인 토큰 쿠키(B_AT*)가 실제로 생겨야 끝난 것으로 본다
+// 간편인증이 code 를 들고 돌아오는 곳(예: /redirect)은 아직 토큰을 받기 전이다 — routes authPaths 에 넣는다. 그리고 로그인 쿠키(server.tokenCookie)가 실제로 생겨야 끝난 것으로 본다
 // (2026-10-06 dev 서버 간편인증 — /redirect 에 닿자마자 저장해 토큰 없는 세션이 저장됐다)
-// 본인인증 전 세션(프로필 authScreens 가 본인인증 화면 — 예: refund login)은 로그인 뒤 본인인증 화면으로 끌려가는 게 정상이다 — 거기 도착해도 끝난 것으로 본다
+// 본인인증 전 세션(프로필 authScreens 가 본인인증 화면)은 로그인 뒤 본인인증 화면으로 끌려가는 게 정상이다 — 거기 도착해도 끝난 것으로 본다
 const sessionProfile = Object.values(routesConfig.profiles ?? {}).find((settings) => settings?.session === profileName)
 const ciEndsLogin = Boolean(routesConfig.ciPath && sessionProfile?.authScreens && String(sessionProfile.authScreens).replace(/^=/, '').startsWith(routesConfig.ciPath))
-const isSignedInPage = (url) => url.origin === new URL(origin).origin && !url.pathname.startsWith('/redirect')
-  && (!url.pathname.startsWith('/auth/') || (ciEndsLogin && url.pathname.startsWith(routesConfig.ciPath)))
-const hasToken = async () => (await context.cookies()).some((cookie) => cookie.name.startsWith('B_AT') && cookie.value)
+// 로그인 화면 경로 — routes authPaths(예: ["/auth/", "/redirect"]), 없으면 signInPath·signOutPath
+const authPaths = (routesConfig.authPaths ?? [routesConfig.signInPath, routesConfig.signOutPath]).filter(Boolean)
+const isSignedInPage = (url) => url.origin === new URL(origin).origin
+  && (!authPaths.some((path) => url.pathname.startsWith(path)) || (ciEndsLogin && url.pathname.startsWith(routesConfig.ciPath)))
+const hasToken = async () => hasLoginCookie(await context.cookies(), SERVER)
 try {
   const deadline = Date.now() + 10 * 60 * 1000
   // 화면이 로그인 밖이고 토큰 쿠키가 있으며, 그 상태가 2초 동안 유지될 때(중간에 다시 /auth 로 가는 리다이렉트가 끝나게)

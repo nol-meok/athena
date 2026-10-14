@@ -595,7 +595,7 @@
   // 카드 상태별 액션 — 아테나에게 보낼 지시문 초안. 보내기 전에 창에서 고칠 수 있다
   // 이슈 [처리 시작] 에서 "담당 에이전트로 바로(조사만)" 를 고르면 쓰는 지시문 — 운영 기준 detached 워크트리에서 조사만, 코드 수정 없음
   const INVESTIGATE = (card) => `${card.id} 이슈를 맡는다. 순서대로 한다: ① git status --short --branch 로 담당 레포의 현재 브랜치·미커밋 변경을 먼저 보고한다(체크아웃·stash 하지 않는다) ② 이슈의 근거를 기준 ref 에서 git show·ls-tree 로 확인한다 ③ ${card.type === 'check' ? '확인 결과를 이슈 파일 끝에 "## 확인 결과 (날짜 · 에이전트)" 절로 파일:줄 근거와 함께 적는다' : '원인과 고칠 범위를 정리해 보고한다 — 코드는 수정하지 않는다(계획서 승인 뒤 아테나가 브랜치를 만들어 다시 맡긴다)'}. 이슈 파일 말고는 수정하지 않는다. 커밋하지 않는다.`;
-  // [QA 실행] — 아테나·에이전트를 거치지 않고 현황판 서버가 scripts/qa/run.mjs 를 뒤에서 돌린다(Work ref 워크트리 · 파일럿 refund-web)
+  // [QA 실행] — 아테나·에이전트를 거치지 않고 현황판 서버가 scripts/qa/run.mjs 를 뒤에서 돌린다(Work ref 워크트리 · 계획서 담당 에이전트의 앱)
   const QA_ACTION = ['QA 실행', (card) => `영향 화면 QA 시뮬레이션을 돌려요.\n대상: ${card.workRef || '(Work ref 없음)'}\n바뀐 파일 → 영향 화면을 찾아 작업·기준 dev 서버로 데스크톱·모바일 검사 + 스크린샷 비교. 진행은 QA 탭에서 실시간으로 보여요.`, 'qa'];
   const ACTIONS = {
     issue: {
@@ -1032,10 +1032,10 @@
     const appSelect = document.getElementById('qa-app');
     const current = appSelect.value;
     appSelect.innerHTML = qaApps.map((entry) => `<option value="${esc(entry.app)}">${esc(entry.app)} (흐름 씬 ${entry.scenarios})</option>`).join('') || '<option value="">설정된 앱 없음</option>';
-    // 앱이 여럿이라 처음엔 마지막에 고른 앱(이 브라우저) — 없으면 refund-web
+    // 앱이 여럿이라 처음엔 마지막에 고른 앱(이 브라우저) — 없으면 첫 앱
     let rememberedApp = '';
     try { rememberedApp = localStorage.getItem('board.qaApp') || ''; } catch (error) { rememberedApp = ''; }
-    appSelect.value = current || (qaApps.some((entry) => entry.app === rememberedApp) ? rememberedApp : 'refund-web');
+    appSelect.value = current || (qaApps.some((entry) => entry.app === rememberedApp) ? rememberedApp : '');
     if (!appSelect.value && qaApps.length) appSelect.value = qaApps[0].app;
     // 대상(로컬·dev 서버)·진행 방식(흐름·한 세션)에 따라 — 로컬로 못 돌리는 앱은 dev 서버만, 흐름이면 세션 고르기를 숨긴다
     const targetSelect = document.getElementById('qa-target');
