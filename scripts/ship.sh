@@ -75,9 +75,9 @@ HEAD_SHA="$(git -C "$TOP" rev-parse --short HEAD)"
 # ── 2. 계획서 — 레포 하나짜리인지, HEAD 가 기록된 커밋인지, 리뷰 기록 ────────────
 HEAD_FULL="$(git -C "$TOP" rev-parse HEAD)"
 HEAD_TREE="$(git -C "$TOP" rev-parse 'HEAD^{tree}')"
-PLAN_INFO="$(python3 - "$ATHENA_DIR/$PLAN" "$ATHENA_DIR" "$HEAD_FULL" "$BRANCH" "$HEAD_TREE" <<'PYEOF'
+PLAN_INFO="$(python3 - "$ATHENA_DIR/$PLAN" "$ATHENA_DIR" "$HEAD_FULL" "$BRANCH" "$HEAD_TREE" "$REPO" <<'PYEOF'
 import json, re, sys, pathlib
-text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'); head, branch, head_tree = sys.argv[3:6]
+text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'); head, branch, head_tree, repo = sys.argv[3:7]
 sys.path.insert(0, sys.argv[2] + '/scripts/lib'); from athena_config import load; cfg = load(sys.argv[2])
 agents = set()
 for repo in cfg['repos']:
@@ -102,9 +102,12 @@ if commits:
 # reviewer 가 끝에 남기는 결론 줄 — "- Review result: 승인 @<sha> · tree <리뷰한 내용> …". 마지막 줄을 본다
 # 승인은 **리뷰한 파일 내용(tree)** 에 묶는다 — 리뷰 → 커밋 순서여도 커밋된 내용(HEAD^{tree})이 같으면 승인이다.
 # tree 가 없는 옛 줄은 커밋 SHA 로 본다
-# 여러 레포 계획서는 브랜치마다 한 줄 — 이 브랜치 줄(없으면 브랜치 표시 없는 옛 줄)만 본다
+# 여러 레포 계획서는 레포·브랜치마다 한 줄 — 이 레포·브랜치 줄만 본다(다른 레포의 같은 이름 브랜치 승인을 쓰지 않는다).
+# 레포 표시가 없는 옛 줄은 이 브랜치 줄, 그것도 없으면 브랜치 표시도 없는 옛 줄
 lines = re.findall(r'^- Review result:.*$', text, re.M)
-mine = [row for row in lines if f'🌿 {branch} ' in row + ' '] or [row for row in lines if '🌿' not in row]
+mine = ([row for row in lines if f'📦 {repo} · 🌿 {branch} ' in row + ' ']
+        or [row for row in lines if '📦' not in row and f'🌿 {branch} ' in row + ' ']
+        or [row for row in lines if '📦' not in row and '🌿' not in row])
 results = []
 for row in mine:
     hit = re.match(r'^- Review result:\s*(.+?)\s*@\s*([0-9a-f]{6,40})', row)

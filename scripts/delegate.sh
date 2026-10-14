@@ -320,7 +320,16 @@ if agent == 'reviewer':
         text = re.sub(r'^(- Work ref:.*)$', lambda match: match.group(1) + '\n' + line, text, count=1, flags=re.M)
 else:
     line = f"- Work ref: {cwd} · 🌿 {branch} · pane {pane} ({agent})"
-    text = re.sub(r'^- Work ref:.*$', line, text, count=1, flags=re.M) if re.search(r'^- Work ref:', text, re.M) else text
+    # 에이전트마다 한 줄 — 여러 레포 계획서에서 두 번째 에이전트가 첫 에이전트의 워크트리·pane 을 덮지 않게.
+    # 같은 에이전트 줄이 있으면 바꾸고, 없으면 아직 pane 이 안 적힌 자리(템플릿 줄)를 채우고, 그것도 없으면 마지막 Work ref 아래에 더한다
+    refs = list(re.finditer(r'^- Work ref:.*$', text, re.M))
+    mine = next((ref for ref in refs if ref.group(0).endswith(f'({agent})')), None)
+    blank = next((ref for ref in refs if not re.search(r'\bpane \S+ \([\w-]+\)$', ref.group(0))), None)
+    target = mine or blank
+    if target:
+        text = text[:target.start()] + line + text[target.end():]
+    elif refs:
+        text = text[:refs[-1].end()] + '\n' + line + text[refs[-1].end():]
 path.write_text(text, encoding='utf-8')
 PYEOF
 

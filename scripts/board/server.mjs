@@ -156,6 +156,8 @@ const readPlan = (path) => {
     blocked: status === 'blocked' || (blocked && !/^없음/.test(blocked)) ? blocked || '막힘' : '',
     next,
     workRef: plain(field(checkpoint, 'Work ref')),
+    // 여러 레포 계획서는 에이전트마다 Work ref 줄이 있다 — pane 을 붙일 때는 모두 본다
+    workRefs: [...checkpoint.matchAll(/^-\s*Work ref:\s*(.+)$/gm)].map((match) => plain(match[1].trim())).join('\n'),
     review: plain(field(checkpoint, 'Review')),
     // PR 줄은 여러 개일 수 있다(레포·앱마다 하나) — 전부 모은다
     pr: [...checkpoint.matchAll(/^-\s*PR:\s*(.+)$/gm)].map((match) => plain(match[1])).join('\n'),
@@ -653,7 +655,7 @@ const collect = async () => {
   for (const plan of plans) {
     // delegate.sh 가 Work ref 에 "pane <id>" 를 적는다. 없으면 브랜치로 맞춘다
     plan.agents = panes
-      .filter((pane) => pane.role === 'agent' && (plan.workRef.includes(`pane ${pane.id} `) || plan.workRef.endsWith(`pane ${pane.id}`) || plan.review.includes(`pane ${pane.id} `) || branchMatches(plan.workRef, pane.branch)))
+      .filter((pane) => pane.role === 'agent' && (plan.workRefs.split('\n').some((ref) => ref.includes(`pane ${pane.id} `) || ref.endsWith(`pane ${pane.id}`) || branchMatches(ref, pane.branch)) || plan.review.includes(`pane ${pane.id} `)))
       .map((pane) => pane.id)
     // 에이전트가 지금 일하고 있으면 진행 중 칸에 — 요청을 여러 번 주고받으면 계획서 Status 가 리뷰에 머물러 있어도
     // 실제로는 작업 중이다. 파일은 바꾸지 않고 보여 주는 칸만 (끝나 대기로 돌아가면 다시 리뷰 칸)
