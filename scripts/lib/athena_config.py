@@ -1,0 +1,28 @@
+"""아테나 설정 읽기 — scripts/lib/config.mjs 와 같은 규칙(파이썬·bash 안의 파이썬 조각용).
+
+athena.config.json(이 컴퓨터 설정) 에 pack 이 있으면 <pack>/pack.json(회사 팩) 위에 덮어 합친다.
+repos 는 팩 것만. pack 이 없으면 athena.config.json 하나가 전부다.
+
+bash 에서:  python3 - "$ATHENA_DIR" <<'PYEOF'
+            import sys; sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load
+            cfg = load(sys.argv[1])
+"""
+import json
+import os
+
+
+def load(athena_dir):
+    with open(os.path.join(athena_dir, 'athena.config.json'), encoding='utf-8') as config_file:
+        local = json.load(config_file)
+    if not local.get('pack'):
+        return local
+    pack_dir = os.path.normpath(os.path.join(athena_dir, local['pack']))
+    pack_file = os.path.join(pack_dir, 'pack.json')
+    if not os.path.isfile(pack_file):
+        raise SystemExit(f'팩이 없다: {pack_file} — athena.config.json 의 pack 경로 확인')
+    with open(pack_file, encoding='utf-8') as pack_json:
+        pack = json.load(pack_json)
+    merged = {**pack, **local}
+    merged['repos'] = pack.get('repos', [])
+    merged['packDir'] = pack_dir
+    return merged
