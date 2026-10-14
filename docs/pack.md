@@ -23,8 +23,8 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 | `skills/<이름>/` | `.claude/skills/` | 회사 스킬 |
 | `knowledge/<레포>/` · `knowledge/company/` · `knowledge/learned/` | `docs/knowledge/` | 레포 지식 5종 · 회사 관례(git·verify·review) · 학습 기록 |
 | `verify/<레포>.sh` | `scripts/verify/` | 검증 스크립트(`_lib.sh`·`_nest.sh` 는 코어) |
-| `diagrams/*` | `docs/diagrams/` | 서비스 다이어그램 · `index.json`(목록 카드) · `SERVICES.md`(/diagram 서비스 표) |
-| `docs/*` | `docs/` | 회사 안내 문서 |
+| `diagrams/*` | `docs/diagrams/` | 서비스 다이어그램 · `index.json`(목록 카드) · `SERVICES.md`(/diagram 서비스 표) — 둘 다 `athena scaffold` 가 처음 만든다 |
+| `docs/*` | `docs/` | 회사 안내 문서 · `services.md`(서비스 소개 + 스택 표 — `athena scaffold` 가 처음 만들고 `build-derived` 가 표를 채운다) |
 | `scripts/*` | `scripts/` | 회사 전용 스크립트 |
 | `qa/{docs,routes,scenarios}` | `docs/qa` · `scripts/qa/routes` · `scripts/qa/scenarios` | QA TC·앱별 QA 설정(화면 목록·서버)·흐름 씬 — 초안은 `node scripts/qa/init-app.mjs --all`(/setup 이 부른다) |
 | `sync/` · `archive/` | `.sync` · `archive` | 지문 · 보관한 일 |

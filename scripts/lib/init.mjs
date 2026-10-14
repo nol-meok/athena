@@ -185,6 +185,59 @@ const writeIfMissing = (path, text, made) => {
   made.push(path)
 }
 
+// 서비스 = 화면·API 단위 — 단일 레포는 레포 하나, 모노레포는 앱마다. 발행 패키지(kind packages)는 화면이 없어 뺀다
+const servicesOf = (config) => config.repos.flatMap((repo) => {
+  if (repo.kind === 'packages') return []
+  if (repo.kind === 'monorepo') {
+    return Object.entries(repo.apps ?? {}).map(([app, spec]) => ({ name: app, repo: repo.name, path: `${repo.name}/${spec.dir ?? `apps/${app}`}`, branch: spec.branch ?? repo.branch, agent: spec.agent ?? '' }))
+  }
+  return [{ name: repo.name, repo: repo.name, path: repo.name, branch: repo.branch, agent: (repo.agents ?? []).join(', ') }]
+})
+
+// 팩 단위 문서 — 서비스 소개(docs/services.md) · 다이어그램 서비스 표(diagrams/SERVICES.md) · 다이어그램 목록 카드(diagrams/index.json).
+// 표의 사실(스택·브랜치)은 /sync 뒤 build-derived 가 채우고, 소개는 /setup 이 레포 코드를 읽어 채운다(모르면 "확인 필요")
+const packDocs = (config, packDir, made) => {
+  const company = config.name ?? basename(packDir)
+  const services = servicesOf(config)
+  const packages = config.repos.filter((repo) => repo.kind === 'packages').map((repo) => repo.name)
+  writeIfMissing(join(packDir, 'docs', 'services.md'), [
+    `# ${company} 서비스`,
+    '',
+    '> 담당 레포·앱 한 장 요약. "스택" 표는 `node scripts/build-derived.mjs` 가 지문(/sync)으로 채운다 — 손으로 고치지 않는다.',
+    '> "서비스 소개" 는 /setup 이 레포 코드(운영 기준 ref)를 읽어 채운다. 확인 안 된 것은 "확인 필요".',
+    '',
+    '## 스택 (자동)',
+    '',
+    '<!-- BEGIN:generated:stack-table -->',
+    '(아직 지문 없음 — node scripts/sync-fingerprint.mjs → --accept → node scripts/build-derived.mjs)',
+    '<!-- END:generated:stack-table -->',
+    '',
+    '## 서비스 소개',
+    '',
+    '| 서비스 | 레포 · 경로 | 기준 ref | 무엇을 하나 | 주요 화면 · API | 담당 에이전트 |',
+    '|---|---|---|---|---|---|',
+    ...services.map((service) => `| ${service.name} | ${service.path} | \`${service.branch ?? '?'}\` | 확인 필요 | 확인 필요 | ${service.agent || '확인 필요'} |`),
+    ...(packages.length ? ['', `발행 패키지(${packages.join(', ')})는 화면이 없어 표에서 뺐다 — 소비 레포 쪽에 적는다.`] : []),
+    '',
+  ].join('\n'), made)
+  writeIfMissing(join(packDir, 'diagrams', 'SERVICES.md'), [
+    '# 다이어그램 서비스 표',
+    '',
+    '/diagram 이 읽는다(서비스 · 레포 · 기준 ref · 가이드 · 심층 폴더). 기준 ref 의 정본은 pack.json — 다르면 pack.json 을 따르고 이 표를 고친다.',
+    '묶음 순서는 위에서부터(한 번에 작업자 5개). 가이드(`docs/diagrams/guides/<서비스>.md`)는 처음 그릴 때 작업자가 만든다(형식 `docs/diagrams/AUTHORING.md` 10절).',
+    '',
+    '| 서비스 | 레포 | 기준 ref | 가이드 | 심층 폴더 |',
+    '|---|---|---|---|---|',
+    ...services.map((service) => `| ${service.name} | ${service.path} | \`${service.branch ?? '?'}\` | \`docs/diagrams/guides/${service.name}.md\` (아직 없음) | — |`),
+    ...(packages.length ? ['', `발행 패키지(${packages.join(', ')})는 화면이 없어 뒤로 미룬다(docs/diagrams/README.md).`] : []),
+    '',
+  ].join('\n'), made)
+  writeIfMissing(join(packDir, 'diagrams', 'index.json'), `${JSON.stringify({
+    $comment: '다이어그램 목록(docs/diagrams/index.html) 카드 — node scripts/build-diagram-index.mjs 가 읽는다. 그린 장이 있는 서비스만 카드가 보인다',
+    groups: [{ title: '서비스', items: services.map((service) => ({ base: service.name, name: service.name, sub: service.path, desc: '' })) }],
+  }, null, 2)}\n`, made)
+}
+
 // pack.json 의 레포마다 뼈대 — 있는 파일은 그대로(덮지 않는다)
 export const scaffold = ({ athenaRoot, packDir, config, only = [] }) => {
   const templates = join(athenaRoot, 'docs/templates/pack')
@@ -218,5 +271,6 @@ export const scaffold = ({ athenaRoot, packDir, config, only = [] }) => {
     writeIfMissing(verify, fill(read('verify.sh'), { repo: repo.name, appUsage: repo.kind === 'monorepo' ? ' <앱>' : '' }), made)
     if (made.length > before) execFileSync('chmod', ['+x', verify])
   }
+  packDocs(config, packDir, made)
   return made
 }
