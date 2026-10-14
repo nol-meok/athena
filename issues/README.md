@@ -37,7 +37,7 @@ plan:                   # 이 이슈를 고치는 계획서. 다른 작업 중 �
 pr:                     # code: PR 번호 (담당 레포)
 fix:                    # knowledge·diagram·repo: athena: 수정 커밋 sha (여러 개면 쉼표)
 target:                 # learn 이슈: 고칠 knowledge 파일#절 (예 docs/knowledge/<레포>/<앱>/gotchas.md#날짜) 또는 skill:<이름>
-scope:                  # learn 이슈: 어디에 걸리나 — 그 화면을 만질 때만이면 코드 폴더(예 app/bmans), 레포 어디서든이면 비우거나 common (learning.md 7절)
+scope:                  # learn 이슈: 어디에 걸리나 — 그 화면을 만질 때만이면 코드 폴더(예 app/orders), 레포 어디서든이면 비우거나 common (learning.md 7절)
 signal:                 # learn 이슈: done(작업 끝) | correction(사용자 교정) | repeat-error(같은 오류 3회) | review(배우기 검토자 — scripts/learn-review.mjs)
 reason:                 # wontfix: 하지 않는 이유
 ---

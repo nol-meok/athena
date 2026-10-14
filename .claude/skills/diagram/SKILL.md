@@ -58,7 +58,7 @@ node scripts/check-diagrams.mjs
 ```bash
 node $A/bin/archify.mjs validate architecture <json> --quality showcase --repo-root <체크아웃> --json   # ok:true · 9/9
 node $A/bin/archify.mjs validate sequence <json> --quality showcase --json                           # sequence 는 --repo-root 없이
-node scripts/diagram-coverage.mjs docs/diagrams/<심층 폴더>     # App/Pages Router 앱만. rn-app 은 작업자의 대조 출력 확인
+node scripts/diagram-coverage.mjs docs/diagrams/<심층 폴더>     # App/Pages Router 앱만. 그 밖(React Native 등)은 작업자의 대조 출력 확인
 node scripts/check-diagrams.mjs                                 # 대상 장이 ✅ 최신
 ls *.architecture.html 2>/dev/null                              # athena 루트에 잘못 생긴 html 이 없어야 한다
 ```

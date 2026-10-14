@@ -25,8 +25,8 @@
  *                                                            json 안의 "{{origin}}" 은 이 서버 주소로 바뀐다
  *   { "mock": { "url": "**\/chat/guest/completions", "method": "POST", "contentType": "text/event-stream", "body": "data: {…}\n\n" } }
  *                                                            json 대신 body(글자 그대로) — SSE 스트림 답변 더미 등. contentType 기본은 json 이면 application/json, body 면 text/plain
- *   { "mock": { "operation": "RefundApplyMutation", "json": { "data": {…} } } }
- *                                                            GraphQL 연산 이름으로 고른다(본문 query 의 `mutation RefundApplyMutation`). method 는 POST 로 본다.
+ *   { "mock": { "operation": "OrderCreateMutation", "json": { "data": {…} } } }
+ *                                                            GraphQL 연산 이름으로 고른다(본문 query 의 `mutation OrderCreateMutation`). method 는 POST 로 본다.
  *                                                            브라우저가 보내는 요청만 잡힌다 — getServerSideProps 등 서버에서 보내는 요청은 못 잡는다
  *   { "human": "휴대폰 본인인증을 마쳐 주세요", "untilUrl": "/auth/ci-authentication" }
  *   { "human": "결과를 다 보셨으면 창을 닫아 주세요", "untilClose": true }

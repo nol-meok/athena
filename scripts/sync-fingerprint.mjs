@@ -6,7 +6,7 @@
  *   node scripts/sync-fingerprint.mjs            # fetch → 지문 생성 → .sync/pending/ 에 저장 → 리포트 출력
  *   node scripts/sync-fingerprint.mjs --no-fetch # 네트워크 없이 로컬 origin/dev 참조만 사용
  *   node scripts/sync-fingerprint.mjs --accept   # pending 지문을 baseline(.sync/snapshots/)으로 확정
- *   node scripts/sync-fingerprint.mjs --repo hub # 특정 레포만 (이름 일부 매칭)
+ *   node scripts/sync-fingerprint.mjs --repo shop # 특정 레포만 (이름 일부 매칭)
  *
  * 리포트는 stdout 과 .sync/last-report.md 에 동시에 남는다.
  * /sync 스킬이 이 리포트를 읽고 .claude/agents/*.md, docs/services.md, 팩 guide/playbook.html 을 갱신한 뒤 --accept 를 호출한다.

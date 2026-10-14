@@ -1,7 +1,7 @@
 #!/bin/sh
 # Claude Code 하단 상태바. 지금 어느 레포의 어느 브랜치를 보고 있는지 항상 보이게 한다.
 #
-#   📁 my-web  🌿 feature/REF-1234  ✎2 +1 -1  ⇡3  ⧉worktree
+#   📁 my-web  🌿 feature/PROJ-1234  ✎2 +1 -1  ⇡3  ⧉worktree
 #
 # **기호·색의 뜻은 docs/playbook.html 의 "작업 흐름 → pane 하단 상태바" 가 정본이다.**
 # 여기에 같은 표를 다시 적지 않는다. 표시를 바꾸면 그쪽도 같이 고친다.

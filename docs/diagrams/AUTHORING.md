@@ -109,7 +109,7 @@ docs/diagrams/<앱>/
 | 가로 연결 최소 **24px** | `layout/constraint` | 5열(폭 236)이면 간격이 20px 라 걸린다. 노드 간격을 벌리거나 그 연결을 뺀다 |
 | `viewBox` 높이 **240 이상** | `schema/minimum` | 2행짜리 장도 240 을 준다 |
 | 긴 `sublabel` | `composition/desktop-readability` | 부제는 짧게. 설명은 `cards` 로 |
-| 레이아웃 | — | **심층은 `pos` + `meta.viewBox`**(care-web 이후 24장 전부). README 의 "grid 를 쓰고 pos 를 잡지 않는다" 는 구조도(작은 장) 기준이다 |
+| 레이아웃 | — | **심층은 `pos` + `meta.viewBox`**(지금까지 그린 심층 전부). README 의 "grid 를 쓰고 pos 를 잡지 않는다" 는 구조도(작은 장) 기준이다 |
 | `meta.repository` | 근거 검사 실패 | `url`·`provider: github`·`link_mode: local-only`·**40자 SHA**. `--repo-root` 에 체크아웃 경로 |
 
 진단이 구체값(`labelDy +24` 등)을 주면 그대로 적용한다. 좌표를 만지기 전에 **노드를 다른 행·열로 옮기는 쪽**이 대개 빠르다.

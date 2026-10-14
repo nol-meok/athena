@@ -2,7 +2,7 @@
 /**
  * 심층 다이어그램 화면 전수 대조 — 한 폴더(탭 번들)의 JSON 이 레포의 화면 파일을 빠짐없이 한 번씩 담았는지 본다.
  *
- *   node scripts/diagram-coverage.mjs docs/diagrams/refund-web
+ *   node scripts/diagram-coverage.mjs docs/diagrams/shop-web
  *
  * 화면 파일은 JSON 의 meta.repository.revision 시점에서 센다(로컬 작업 트리는 읽지 않는다).
  *   - App Router : <앱 루트>/app/**\/page.{tsx,ts,jsx,js}

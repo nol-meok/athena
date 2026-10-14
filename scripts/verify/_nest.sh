@@ -24,7 +24,7 @@ verify_nest() {
     run_step "pnpm prisma:generate" pnpm run --silent prisma:generate
   fi
 
-  # eslint 설정 파일이 없는 레포가 있다(2026-10 기준 works·refund·survey 등) — 원래 lint 를 안 쓰는 것이라 엄격 모드(commit.sh)에서는 줄을 넣지 않는다
+  # eslint 설정 파일이 없는 레포가 있다 — 원래 lint 를 안 쓰는 것이라 엄격 모드(commit.sh)에서는 줄을 넣지 않는다
   for config_file in .eslintrc .eslintrc.js .eslintrc.cjs .eslintrc.json .eslintrc.yml eslint.config.js eslint.config.mjs eslint.config.cjs eslint.config.ts; do
     [ -f "$config_file" ] && { has_eslint_config=1; break; }
   done

@@ -88,7 +88,7 @@ export function createLiveLog(runDir) {
       if (request.method() === 'POST' && /"query"\s*:\s*"\s*(query|mutation)/.test(request.postData() ?? '')) {
         const body = await response.json().catch(() => null)
         if (Array.isArray(body?.errors) && body.errors.length) errors = maskText(body.errors.map((error) => error.message ?? error.code ?? '').join(' | ')).slice(0, 300)
-        // 결과 안의 업무 오류 — { result: false, errors: { code, message } } 처럼 200·data 안에 담긴 것(간편인증·환급 토큰 등). 코드·메시지만(값은 안 남긴다)
+        // 결과 안의 업무 오류 — { result: false, errors: { code, message } } 처럼 200·data 안에 담긴 것(인증·결제 토큰 등). 코드·메시지만(값은 안 남긴다)
         else if (body?.data) errors = maskText(payloadErrors(body.data).join(' | ')).slice(0, 300)
       }
       record(request, response.status(), errors)

@@ -604,7 +604,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
 
           <h4 id="statusbar">pane 하단 상태바</h4>
           <p>에이전트 pane 을 열면 입력창 아래에 <strong>지금 어느 레포의 어느 브랜치에 서 있고 무엇이 바뀌었는지</strong>가 항상 표시됩니다. 브랜치를 잘못 알고 작업하는 사고를 막기 위한 것이라, 스크롤로 사라지는 보고문 대신 상시 표시로 두었습니다.</p>
-<pre><code>📁 &lt;레포 A&gt;  🌿 feature/REF-1234  ✎2  +1  ⇡3  🧠 Opus 5.5
+<pre><code>📁 &lt;레포 A&gt;  🌿 feature/PROJ-1234  ✎2  +1  ⇡3  🧠 Opus 5.5
 📁 &lt;레포 B&gt;  ⚠️  prd                              ← 보호 브랜치는 빨갛게</code></pre>
           <div class="table-wrap">
             <table>
@@ -671,7 +671,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
             <li>FE 에이전트는 사용자가 pane 에서 "커밋해줘" 라고 할 때만 <code>scripts/commit.sh</code> 로 로컬 커밋(지정 파일만·엄격 검증·계획서 기록). push·PR 은 "PR 올려줘" 일 때 <code>scripts/ship.sh</code> 로(레포 하나짜리, draft)</li>
             <li>PR 제목 <code>type(범위): 티켓 요약</code> · 본문 공통 템플릿 (<code>git.md</code> "PR 제목·본문")</li>
             <li>시작 전 <code>git status</code>로 기존 변경 확인, 무관한 파일은 건드리지 않음</li>
-            <li>커밋 메시지는 한국어, 티켓 있으면 <code>feat: REF-1234 설명</code></li>
+            <li>커밋 메시지는 한국어, 티켓 있으면 <code>feat: PROJ-1234 설명</code></li>
           </ul>
         </div>
         <div class="rule">

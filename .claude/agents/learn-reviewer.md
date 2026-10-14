@@ -45,7 +45,7 @@ JSON 으로만 답한다(스크립트가 형식을 정해 준다). 최대 3개, 
 | `rule` | **에이전트** — 공책 한 줄 | 규칙 + 이유 한 마디. PR 번호·날짜·작업 이야기 없이 |
 | `basis` · `evidence` | 스크립트·사람 | `code`(파일:줄) · `run`(확인한 실행 결과) · `user-said` |
 | `knowledge` · `section` · `kind` · `signal` · `strengthen` · `skill` | 스크립트 | 어느 영역 공책의 어느 절인지, 어떤 계기인지 |
-| `scope` | 스크립트 | **어디에 걸리나** — 레포 어디서든 밟으면 `common`, 특정 화면을 만질 때만이면 그 코드 폴더(`app/bmans` · `src/screens/tabs`). URL 이 아니라 폴더로 적는다. 애매하면 `common`(학습 기준 7절) |
+| `scope` | 스크립트 | **어디에 걸리나** — 레포 어디서든 밟으면 `common`, 특정 화면을 만질 때만이면 그 코드 폴더(`app/orders` · `src/screens/tabs`). URL 이 아니라 폴더로 적는다. 애매하면 `common`(학습 기준 7절) |
 
 ## 하지 않는 것
 

@@ -7,12 +7,12 @@
 # 한 레포에서 여러 작업을 동시에 진행할 수 있다.
 #
 # 사용:
-#   scripts/new-branch.sh REF-3820 refund hub          # 두 레포에 워크트리 생성
-#   scripts/new-branch.sh REF-3820 web:admin           # 모노레포는 <별칭>:<앱> 으로 앱의 base 를 고른다
-#   scripts/new-branch.sh fix/qa-로그인 care            # 슬래시가 있으면 그 이름 그대로
-#   scripts/new-branch.sh REF-3820 refund --in-place   # 워크트리 없이 메인 체크아웃에서 분기
-#   scripts/new-branch.sh REF-3820 refund --dry-run
-#   scripts/new-branch.sh REF-3820 refund --reuse     # 이미 있는 브랜치를 이어 쓴다 (있으면 기본은 알려 주고 멈춘다)
+#   scripts/new-branch.sh PROJ-3820 shop-web admin-web # 두 레포에 워크트리 생성
+#   scripts/new-branch.sh PROJ-3820 web:admin          # 모노레포는 <별칭>:<앱> 으로 앱의 base 를 고른다
+#   scripts/new-branch.sh fix/qa-로그인 admin-web       # 슬래시가 있으면 그 이름 그대로
+#   scripts/new-branch.sh PROJ-3820 shop-web --in-place # 워크트리 없이 메인 체크아웃에서 분기
+#   scripts/new-branch.sh PROJ-3820 shop-web --dry-run
+#   scripts/new-branch.sh PROJ-3820 shop-web --reuse   # 이미 있는 브랜치를 이어 쓴다 (있으면 기본은 알려 주고 멈춘다)
 #
 # 대상은 레포 이름 일부 또는 설정 alias 로 매칭한다. 모노레포는 <별칭>:<앱>
 # (<별칭>:packages 는 안내하고 멈춘다 — 앱 워크트리에 packages/** 가 같이 있다).

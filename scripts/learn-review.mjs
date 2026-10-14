@@ -216,7 +216,7 @@ const LEARN_SCHEMA = {
           kind: { type: 'string', enum: ['gotchas', 'skill'] },
           section: { type: 'string', description: '그 knowledge 파일에서 넣을 절 제목(## 제목 글자 그대로, 새 절이면 지을 이름). skill 이면 빈 문자열' },
           knowledge: { type: 'string', description: 'knowledge 폴더(예 <레포> 또는 모노레포 <레포>/<앱>). skill 이면 빈 문자열' },
-          scope: { type: 'string', description: '어디에 걸리나 — 레포 어디서든 밟으면 "common", 특정 화면을 만질 때만이면 그 코드 폴더(예 app/bmans · pages/auth · src/screens/tabs). 애매하면 common. skill 이면 빈 문자열' },
+          scope: { type: 'string', description: '어디에 걸리나 — 레포 어디서든 밟으면 "common", 특정 화면을 만질 때만이면 그 코드 폴더(예 app/orders · pages/auth · src/screens/tabs). 애매하면 common. skill 이면 빈 문자열' },
           skill: { type: 'string', description: 'kind 가 skill 일 때 스킬 이름(소문자·숫자·-). 아니면 빈 문자열' },
           title: { type: 'string', description: '무엇을 학습했는지 쉬운 한 줄(파일명·함수명 대신 무슨 일이 생기나로). 50자 안팎' },
           explain: { type: 'string', description: '무엇을 배웠나 — 그 작업을 모르는 사람도 알게 2~3문장. 배경부터 짧게, 용어는 풀어서. 대화·로그 문장을 그대로 붙이지 않는다' },

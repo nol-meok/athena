@@ -15,7 +15,7 @@ argument-hint: "(선택) 레포 이름 일부 — 예: web, api. 비우면 전�
 ### 1단계: 지문 생성
 ```bash
 node scripts/sync-fingerprint.mjs            # 전체
-node scripts/sync-fingerprint.mjs --repo hub # 특정 레포
+node scripts/sync-fingerprint.mjs --repo shop # 특정 레포
 ```
 - 레포별 기준 브랜치(팩 `pack.json` 의 `branch`, 모노레포는 앱마다)를 fetch 하고 지문(스택 버전, scripts, 포트, prettier, 디렉토리 구조, 규칙 문서 blob)을 `.sync/pending/` 에 저장
 - 이전 baseline(`.sync/snapshots/`)과 비교한 리포트를 출력하고 `.sync/last-report.md` 에도 남긴다
@@ -72,7 +72,7 @@ node scripts/sync-fingerprint.mjs --repo hub # 특정 레포
 
 ### 3.5단계: 다이어그램 근거 점검
 
-다이어그램은 커밋(`meta.repository.revision`)에 고정돼 있어 archify validate 는 계속 통과한다. 운영 코드가 바뀌어도 **그림만 조용히 낡는다**(2026-09-28 care-web 폴더 개명 때 실제로 그랬다). 그래서 sync 마다 근거를 다시 대조한다:
+다이어그램은 커밋(`meta.repository.revision`)에 고정돼 있어 archify validate 는 계속 통과한다. 운영 코드가 바뀌어도 **그림만 조용히 낡는다**(2026-09-28 화면 폴더 이름을 바꿨을 때 실제로 그랬다). 그래서 sync 마다 근거를 다시 대조한다:
 
 ```bash
 node scripts/check-diagrams.mjs

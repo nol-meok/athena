@@ -417,7 +417,7 @@
       <select id="qa-app" aria-label="앱"></select>
       <select id="qa-target" aria-label="대상" title="로컬 서버 = 최신 개발 브랜치 코드를 내 컴퓨터에서 · dev 서버 = 배포된 사이트(간편인증 로그인 가능)"><option value="local">🖥 로컬 서버</option><option value="server">☁️ 서버 (주소 입력)</option></select>
       <input id="qa-server" type="text" placeholder="__BOARD_QA_EXAMPLE__" aria-label="서버 주소" title="dev · stg · dev-1~3 · PR 미리보기 주소 — 운영 주소는 막혀요" hidden>
-      <select id="qa-mode" aria-label="진행 방식" title="흐름 = 비로그인 → 로그인 상태 전부 차례로(예: login → verified, 세션이 없거나 만료면 그 차례에 로그인 창) → 실패 리포트"><option value="flow">🧭 흐름(모든 세션 차례로)</option><option value="single">한 세션만</option></select>
+      <select id="qa-mode" aria-label="진행 방식" title="흐름 = 비로그인 → 로그인 상태 전부 차례로(routes profiles 순서, 세션이 없거나 만료면 그 차례에 로그인 창) → 실패 리포트"><option value="flow">🧭 흐름(모든 세션 차례로)</option><option value="single">한 세션만</option></select>
       <select id="qa-profile" aria-label="세션 프로필"></select>
       <button type="button" class="btn" id="qa-suite">전체 검수 시작</button>
       <p class="qa-warn" id="qa-warn" hidden></p>
@@ -508,8 +508,8 @@
     </dl></div>
     <div><h4>세션 · 뷰포트</h4><dl>
       <dt>logout</dt><dd>로그인 안 한 상태</dd>
-      <dt>login</dt><dd>로그인만(약관·본인인증 전)</dd>
-      <dt>verified</dt><dd>본인인증까지 끝난 상태</dd>
+      <dt>login</dt><dd>로그인만 한 상태</dd>
+      <dt>그 밖</dt><dd>앱이 routes profiles 에 정한 더 깊은 상태(예: 본인인증까지 끝난 상태) — 이름은 앱마다 다르다</dd>
       <dt>mobile · desktop</dt><dd>그 폭에서만 · <b>둘다</b> 는 두 폭 모두</dd>
     </dl></div>
     <p class="note">ID 는 앱 접두사 + 번호(접두사 표는 정본 문서). 행을 누르면 사전 조건·단계·기대 결과·근거(코드 위치)가 펼쳐진다. 정본: docs/qa/tc/README.md "용어"</p>
@@ -1237,8 +1237,8 @@
     const cards = entries.flatMap((entry) => (entry.journeyCards || []).map((card) => ({ ...card, app: entry.app })));
     const open = tcState.journeysOpen ?? false;
     box.innerHTML = cards.length ? `<details class="tc-journey-box"${open ? ' open' : ''}><summary>🧭 여정 ${cards.length}개 — 사용자 흐름을 따라 이어서 검사(구간·실행)</summary>${cards.map((card) => `<div class="tc-journey"><div class="head"><b>🧭 ${esc(card.name)}</b><span class="sub">${esc(TC_APP_NAME[card.app] || card.app)} · ${esc(card.file)}</span>
-        <button type="button" class="btn" data-journey="${esc(card.app)}|${esc(card.file)}|auto" title="본인인증·간편인증·수집을 더미 응답으로 — 사람 없이">▶ 자동</button>
-        <button type="button" class="btn" data-journey="${esc(card.app)}|${esc(card.file)}|real" title="간편인증·수집 구간을 사람이 직접(실제 개인정보·실제 홈택스 수집) — 크롬 창이 따로 떠요">▶ 실제</button></div>
+        <button type="button" class="btn" data-journey="${esc(card.app)}|${esc(card.file)}|auto" title="사람 단계(본인인증 등)를 더미 응답으로 — 사람 없이">▶ 자동</button>
+        <button type="button" class="btn" data-journey="${esc(card.app)}|${esc(card.file)}|real" title="사람 단계(본인인증 등)를 사람이 직접(실제 개인정보·실제 외부 연동) — 크롬 창이 따로 떠요">▶ 실제</button></div>
       ${card.why ? `<div class="why">${esc(card.why)}</div>` : ''}
       <ol>${card.sections.map((section) => `<li><div class="title">${esc(section.title)}${section.modes.map((mode) => `<span class="mode">${mode === 'real' ? '실제' : '자동'} 갈래</span>`).join('')}</div>
         ${section.desc ? `<div>${esc(section.desc)}</div>` : ''}
@@ -1251,7 +1251,7 @@
         const target = document.getElementById('qa-target').value;
         const server = document.getElementById('qa-server').value.trim();
         if (target === 'server' && !server) return toast('서버 주소를 [런] 의 전체 검수 칸에 넣어 주세요');
-        if (!confirm(`${app} 여정 ${file.slice(0, 2)} 을 ${mode === 'real' ? '실제 모드(간편인증·수집을 직접 — 크롬 창이 따로 떠요)' : '자동 모드(더미 응답)'} 로 돌릴까요?\n${target === 'server' ? `☁️ 서버 ${server}` : '🖥 로컬 서버'} · 라이브 화면이 새 탭으로 열려요`)) return;
+        if (!confirm(`${app} 여정 ${file.slice(0, 2)} 을 ${mode === 'real' ? '실제 모드(사람 단계를 직접 — 크롬 창이 따로 떠요)' : '자동 모드(더미 응답)'} 로 돌릴까요?\n${target === 'server' ? `☁️ 서버 ${server}` : '🖥 로컬 서버'} · 라이브 화면이 새 탭으로 열려요`)) return;
         try {
           // 세션을 안 골랐으면 그 앱의 마지막 프로필(routes profiles 순서 — 보통 가장 깊은 로그인 상태)
           if (!qaApps.length) await loadQaApps();
