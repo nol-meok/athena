@@ -112,6 +112,6 @@
 ## 참고 문서
 - **공통 규칙·지식 진입점: `AGENTS.md`** (도구 무관. Codex 등 다른 에이전트도 이걸 읽는다)
 - 지식 베이스: `docs/knowledge/README.md` — 공통 `common/`, 레포별 `<레포>/{rules,structure,patterns,workflows,gotchas}.md`
-- 서비스 맵: `docs/services.md`(회사 팩) · 팩 형식: `docs/pack.md` · 계획서 템플릿: `docs/plan-template.{md,html}`
+- 서비스 맵: `docs/services.md`(회사 팩) · 팩 형식: `docs/pack.md` · 첫 실행(/setup 정본, 도구 무관): `docs/setup.md` · 계획서 템플릿: `docs/plan-template.{md,html}`
 - 에이전트 프로필: `.claude/agents/*.md` · 디스패치 프로토콜: `.claude/rules/dispatch-protocol.md`
 - 사용 가이드: `docs/playbook.html`(`/guide 열기`) · 시작하기 `ONBOARDING.md`·`docs/onboarding.html`(`/guide 시작하기`) — 레포 안에서만 관리한다(외부 공유본 없음)
