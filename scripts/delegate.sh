@@ -239,25 +239,31 @@ printf '%s' "$PROMPT" > "$PROMPT_FILE"   || { rm -f "$PROMPT_FILE" "$RUNNER"; ec
 # 정의·공통 규칙을 직접 넘기고, 상태바·검증 스크립트가 메인 체크아웃 대신 워크트리를 보게 한다.
 WORK_TOP="$(git -C "$WORKDIR" rev-parse --show-toplevel 2>/dev/null)"
 ATHENA_REAL="$(cd "$ATHENA_DIR" && pwd -P)"
-CLAUDE_ARGS="--agent '$AGENT'"
+# 실행기에 넣는 값은 모두 printf %q 로 감싼다 — 작은따옴표로 바로 넣으면 경로에 ' 가 있을 때 실행기가 깨진다
+shq() { printf '%q' "$1"; }
+CLAUDE_ARGS="--agent $(shq "$AGENT")"
 EXTRA_FILES=""
 if [ -n "$WORK_TOP" ] && [ "$(cd "$WORK_TOP" && pwd -P)" != "$ATHENA_REAL" ]; then
   AGENTS_JSON="$(mktemp -t hermes-agents)" && CONTEXT_FILE="$(mktemp -t hermes-context)" && SETTINGS_FILE="$(mktemp -t hermes-settings)" \
     && python3 "$ATHENA_DIR/scripts/agent-context.py" "$AGENT" "$ATHENA_DIR" "$WORK_TOP" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" \
     || { rm -f "$PROMPT_FILE" "$RUNNER" "${AGENTS_JSON:-}" "${CONTEXT_FILE:-}" "${SETTINGS_FILE:-}"; echo "에이전트 컨텍스트 생성 실패"; exit 1; }
-  EXTRA_FILES="'$AGENTS_JSON' '$CONTEXT_FILE' '$SETTINGS_FILE'"
-  CLAUDE_ARGS="--agents \"\$(cat '$AGENTS_JSON')\" $CLAUDE_ARGS --add-dir '$ATHENA_DIR' --append-system-prompt-file '$CONTEXT_FILE' --settings '$SETTINGS_FILE'"
+  EXTRA_FILES="$(shq "$AGENTS_JSON") $(shq "$CONTEXT_FILE") $(shq "$SETTINGS_FILE")"
+  CLAUDE_ARGS="--agents \"\$(cat $(shq "$AGENTS_JSON"))\" $CLAUDE_ARGS --add-dir $(shq "$ATHENA_DIR") --append-system-prompt-file $(shq "$CONTEXT_FILE") --settings $(shq "$SETTINGS_FILE")"
   REPO_DIR="$WORK_TOP"
 else
   # hermes 안에서 띄워도 보호 훅을 건다 — FE 는 commit-guard(git commit 직접·add -A → commit.sh, push·gh pr 차단) + secret-guard,
   # reviewer 는 secret-guard 만(토큰·키 값은 어떤 세션에서도 출력하지 않는다)
   SETTINGS_FILE="$(mktemp -t hermes-settings)" || { rm -f "$PROMPT_FILE" "$RUNNER"; echo "mktemp 실패"; exit 1; }
-  python3 -c 'import json,sys; hooks=[{"type":"command","command":"python3 "+path} for path in sys.argv[2:]]; json.dump({"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":hooks}]}}, open(sys.argv[1],"w"))' \
-    "$SETTINGS_FILE" $( [ "$AGENT" != reviewer ] && echo "$ATHENA_DIR/scripts/hooks/commit-guard.py" ) "$ATHENA_DIR/scripts/hooks/secret-guard.py"
-  EXTRA_FILES="'$SETTINGS_FILE'"
-  CLAUDE_ARGS="$CLAUDE_ARGS --settings '$SETTINGS_FILE'"
+  GUARD_HOOKS=()
+  [ "$AGENT" != reviewer ] && GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/commit-guard.py")
+  GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/secret-guard.py")
+  # 훅 명령도 셸이 읽으므로 경로를 셸 따옴표로 감싼다
+  python3 -c 'import json,shlex,sys; hooks=[{"type":"command","command":"python3 "+shlex.quote(path)} for path in sys.argv[2:]]; json.dump({"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":hooks}]}}, open(sys.argv[1],"w"))' \
+    "$SETTINGS_FILE" "${GUARD_HOOKS[@]}"
+  EXTRA_FILES="$(shq "$SETTINGS_FILE")"
+  CLAUDE_ARGS="$CLAUDE_ARGS --settings $(shq "$SETTINGS_FILE")"
 fi
-[ -n "${RESUME:-}" ] && CLAUDE_ARGS="$CLAUDE_ARGS --resume '$RESUME'"
+[ -n "${RESUME:-}" ] && CLAUDE_ARGS="$CLAUDE_ARGS --resume $(shq "$RESUME")"
 
 # 팩 훅(설정 hooks.delegateEnv) — 에이전트마다 실행기에 넣을 export 줄을 팩이 정한다(회사 레포 고유 환경값).
 # 인자: <에이전트> <아테나 폴더>. 출력 줄을 그대로 실행기에 넣는다
@@ -274,15 +280,15 @@ PYEOF
 # exec 를 쓰지 않는다. exec 는 셸을 교체해 EXIT trap 이 돌지 않아 임시 파일이 남는다.
 {
   echo '#!/usr/bin/env bash'
-  echo "cleanup() { rm -f '$PROMPT_FILE' '$RUNNER' $EXTRA_FILES; }"
+  echo "cleanup() { rm -f $(shq "$PROMPT_FILE") $(shq "$RUNNER") $EXTRA_FILES; }"
   echo 'trap cleanup EXIT INT TERM'
-  echo "cd '$WORKDIR' || exit 1"
-  [ -n "$REPO_DIR" ] && echo "export ATHENA_REPO_DIR='$REPO_DIR'"
-  echo "export ATHENA_AGENT='$AGENT'"
-  [ -n "$EXTRA_FILES" ] && echo "export ATHENA_VERIFY_DIR='$WORK_TOP'"
+  echo "cd $(shq "$WORKDIR") || exit 1"
+  [ -n "$REPO_DIR" ] && echo "export ATHENA_REPO_DIR=$(shq "$REPO_DIR")"
+  echo "export ATHENA_AGENT=$(shq "$AGENT")"
+  [ -n "$EXTRA_FILES" ] && echo "export ATHENA_VERIFY_DIR=$(shq "$WORK_TOP")"
   [ -n "$PACK_ENV" ] && printf '%s\n' "$PACK_ENV"
   if [ -n "$PROMPT" ]; then
-    echo "claude $CLAUDE_ARGS \"\$(cat '$PROMPT_FILE')\""
+    echo "claude $CLAUDE_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
   else
     echo "claude $CLAUDE_ARGS"
   fi
