@@ -691,7 +691,7 @@ let snapshotHash = ''
 let updatedAt = 0
 const clients = new Set()
 
-const refresh = async () => {
+const refreshOnce = async () => {
   const collectStarted = Date.now()
   const state = await collect()
   const collectMs = Date.now() - collectStarted
@@ -703,6 +703,29 @@ const refresh = async () => {
   updatedAt = Date.now()
   const payload = `data: ${JSON.stringify({ ...snapshot, updatedAt, boot: BOOT })}\n\n`
   for (const client of clients) client.write(payload)
+}
+// 갱신은 한 번에 하나 — 수집이 3초보다 오래 걸려도 겹치지 않게(먼저 시작한 낡은 수집이 나중 것을 덮거나 자동 완료·학습 대기열을 두 번 돌리지 않게).
+// 도는 중에 요청이 오면(카드 이동 등) 끝난 뒤 한 번 더 돈다. 3초 주기는 도는 중이면 건너뛴다. 오류는 남기고 서버는 계속 돈다
+let refreshing = null
+let refreshAgain = false
+const refresh = (again = true) => {
+  if (refreshing) {
+    if (again) refreshAgain = true
+    return refreshing
+  }
+  refreshing = (async () => {
+    try {
+      do {
+        refreshAgain = false
+        await refreshOnce()
+      } while (refreshAgain)
+    } catch (error) {
+      console.error(`⚠️ 현황판 갱신 실패: ${error.message}`)
+    } finally {
+      refreshing = null
+    }
+  })()
+  return refreshing
 }
 
 const TOKEN = randomBytes(16).toString('hex')
@@ -1349,7 +1372,7 @@ const allowed = (request) => {
   return okOrigin && request.headers['x-board-token'] === TOKEN && request.headers['content-type']?.startsWith('application/json')
 }
 
-createServer(async (request, response) => {
+const handleRequest = async (request, response) => {
   const url = new URL(request.url, `http://localhost:${PORT}`)
   if (url.pathname === '/events') {
     // 기동 번호 없이 붙는 건 옛 페이지 — 204 를 주면 EventSource 가 재연결을 멈춘다(연결 한도를 잡아먹지 않게)
@@ -1549,11 +1572,15 @@ createServer(async (request, response) => {
       // 바로 작업 번호를 돌려주고 뒤에서 돈다 — 진행은 SSE event: job
       const job = { id: randomBytes(4).toString('hex'), issue: String(body.id ?? ''), agent: String(body.agent ?? ''), state: 'running', steps: STEPS.map(([key, label]) => ({ key, label, state: 'wait' })) }
       jobs.set(job.id, job)
-      dispatchAgent(job.issue, job.agent, String(body.text ?? ''), job).then(async (result) => {
-        Object.assign(job, result.error ? { state: 'error', error: result.error } : { state: 'done', result })
-        pushJob(job)
-        await refresh()
-      })
+      dispatchAgent(job.issue, job.agent, String(body.text ?? ''), job)
+        .catch((error) => ({ error: `처리 중 오류 — ${error.message}` }))
+        .then(async (result) => {
+          Object.assign(job, result.error ? { state: 'error', error: result.error } : { state: 'done', result })
+          pushJob(job)
+          // 끝난 작업은 10분 뒤 잊는다(오래 켜 둬도 쌓이지 않게)
+          setTimeout(() => jobs.delete(job.id), 600_000).unref()
+          await refresh()
+        })
       return reply(202, { ok: true, job: job.id })
     }
     if (url.pathname === '/api/qa-suite') {
@@ -1645,8 +1672,17 @@ createServer(async (request, response) => {
   }
   response.writeHead(url.pathname === '/' ? 200 : 404, { 'Content-Type': 'text/html; charset=utf-8' })
   response.end(url.pathname === '/' ? page : 'not found')
+}
+
+// 요청 처리 중 예외(사라진 파일·깨진 JSON·쓰기 오류)는 500 으로 답하고 서버는 계속 돈다
+createServer((request, response) => {
+  handleRequest(request, response).catch((error) => {
+    console.error(`⚠️ ${request.method} ${request.url} 처리 실패: ${error.message}`)
+    if (!response.headersSent) response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' })
+    if (!response.writableEnded) response.end(JSON.stringify({ error: `처리하지 못했어요 — ${error.message}` }))
+  })
 }).listen(PORT, '127.0.0.1', async () => {
   await refresh()
-  setInterval(refresh, POLL_MS)
+  setInterval(() => refresh(false), POLL_MS)
   console.log(`아테나 현황판: http://localhost:${PORT}  (3초마다 갱신 · Ctrl+C 로 종료)`)
 })
