@@ -55,6 +55,7 @@ claude              # 레포 연결은 자동 · 팩이 비었으면 /setup 이 
 | 이렇게 하면 | 일어나는 일 |
 |---|---|
 | 그냥 말하기 — "목록 페이지네이션 버그 원인 찾아줘" | 아테나가 라우팅 → 계획서 → 디스패치 → 리뷰 → 보고 |
+| `/setup` | 새 회사 첫 실행 — 레포 찾기 → 팩 만들기 → 에이전트·지식 뼈대 → 검증 → 지문 (팩이 없으면 켤 때 안내된다) |
 | `/call <에이전트>` | 담당 에이전트를 pane 에 바로. 요청·"커밋해줘"·"PR 올려줘" 까지 그 pane 에서 |
 | `/board` | 현황판(`localhost:4700`) — 서비스 · 정비 · QA · 학습 · 아카이브 |
 | `/guide` | 가이드 메뉴 — 구조 설명 · 시작하기 · 플레이북 · 다이어그램 · 확장 가이드 · 스킬 · 에이전트·라우팅 |
@@ -74,7 +75,7 @@ claude              # 레포 연결은 자동 · 팩이 비었으면 /setup 이 
                                          현황판 [학습] 탭 — 사람이 [넣기]
                                                   │
                                                   ▼
-                              레포 공책 gotchas.md (git 으로 팀 공유)
+                   레포 공책 gotchas.md (회사 팩 레포 — git 으로 팀 공유)
                                                   │
                                                   ▼
                                        다음 작업이 시작 전에 읽는다
@@ -84,39 +85,39 @@ claude              # 레포 연결은 자동 · 팩이 비었으면 /setup 이 
 
 ## 구조
 
+코어(이 레포)와 회사 팩(`packs/<회사>/`, 별도 레포)으로 나뉜다. 팩 파일은 `bin/athena pack link` 가 코어의 정해진 자리에 **링크**로 건다 — 아래 "(팩)" 표시가 그런 자리다. 팩 형식은 `docs/pack.md`.
+
 ```
-athena/
+athena/                        ← 코어
 ├── AGENTS.md                  공통 규칙·지식 진입점 (Codex 등 다른 도구도 읽는다)
-├── CLAUDE.md                  Claude Code 전용 — 아테나 역할 · 에이전트 · 스킬 · 흐름
+├── CLAUDE.md                  Claude Code 전용 — 아테나 역할 · 흐름 · 스킬. 회사 라우팅은 @pack/ROUTING.md 로 불러온다
 ├── ONBOARDING.md              시작하기 가이드
-├── athena.config.json         이 컴퓨터 설정 — 회사 팩 위치 · reposRoot (git 무시, example 을 복사)
+├── athena.config.example.json 이 컴퓨터 설정 예시 → athena.config.json 으로 복사(git 무시) — 팩 위치 · reposRoot
+├── bin/athena                 init(레포 찾기·팩 만들기) · scaffold(뼈대) · pack link · pack check
 │
 ├── .claude/
-│   ├── agents/                에이전트 24개 (역할·담당 범위·지식 진입점)
+│   ├── agents/                reviewer · learn-reviewer + 레포 담당 에이전트(팩)
 │   ├── rules/                 언어 · 코드 · Git · 디스패치 규칙
-│   └── skills/                /call /board /sync /diagram /guide /monitor /seo-feedback /qa-tc
+│   └── skills/                /setup /call /board /sync /diagram /guide /monitor + 회사 스킬(팩)
 │
 ├── docs/
 │   ├── knowledge/             지식 노트 — 에이전트가 일할 때 읽는다
 │   │   ├── common/            팀 공통 (coding · git · verify · reporting · learning)
-│   │   ├── <레포>/            rules · structure · patterns · workflows · gotchas(공책)
 │   │   ├── athena/            아테나 자체 함정 공책
-│   │   └── learned/           학습한 내용의 쉬운 설명 기록
-│   ├── athena-explained.html  아테나 구조 설명 — 무엇이고 어떻게 돌아가나 (/guide 설명)
-│   ├── playbook.html          그림으로 보는 사용법 (/guide 열기)
+│   │   └── <레포>/ · company/ · learned/   레포 지식 · 회사 관례 · 학습 기록(팩)
+│   ├── athena-explained.html  아테나 구조 설명 (/guide 설명 — 팩 판이 있으면 그것)
+│   ├── playbook.html          그림으로 보는 사용법 (/guide 열기 — 팩 판이 있으면 그것)
 │   ├── onboarding.html        시작하기 화면 (/guide 시작하기)
-│   ├── diagrams/              작업 흐름 · 서비스별 구조·화면 맵·요청 흐름 (/guide 그림)
-│   ├── services.md            서비스 비교표 (포트·스택·검증 명령)
-│   ├── qa/                    QA TC 목록
-│   ├── handoff/               작업 인계 문서 (예: 케어·환급 웹 GraphQL → REST 전환)
+│   ├── diagrams/              작업 흐름 그림 + 서비스 다이어그램(팩) (/guide 그림)
+│   ├── templates/pack/        새 회사 뼈대 템플릿 — 에이전트 · rules · structure · gotchas · verify
+│   ├── pack.md                회사 팩 형식
 │   ├── extending.md           스킬·에이전트 추가 방법
 │   └── plan-template*         계획서 템플릿 (정식 md + 결정 콘솔 html · 경량 md)
 │
 ├── plans/                     작업계획서 — 각자 로컬 (git 에 안 올라감)
 ├── issues/                    이슈·학습 후보 — 각자 로컬 (git 에 안 올라감)
-├── archive/                   끝나서 보관한 일 — 이건 git 에 올라간다
-├── repos/                     담당 레포 링크 (각자 로컬)
-├── .sync/snapshots/           /sync 비교 기준 (운영 브랜치 지문)
+├── repos/                     담당 레포 링크 (각자 로컬, scripts/setup.sh)
+├── packs/<회사>/              회사 팩 레포 클론 (git 무시) — pack 링크가 가리킨다
 │
 └── scripts/
     ├── 작업 흐름
@@ -127,28 +128,40 @@ athena/
     │   ├── review-result.sh               reviewer 결론 기록
     │   └── heavy.sh                       무거운 명령 한 번에 하나씩
     ├── 검증 · QA
-    │   ├── verify/<레포>.sh               표준 검증 (에이전트·reviewer 공용)
-    │   └── qa/                            QA 시뮬레이션 (Playwright)
+    │   ├── verify/_lib.sh · _nest.sh · _generic.sh   검증 공용(표 형식 · NestJS · 새 레포 기본)
+    │   ├── verify/<레포>.sh               레포별 표준 검증(팩)
+    │   └── qa/                            QA 시뮬레이션 (Playwright) — 화면 목록·씬은 팩
     ├── 현황판 · 화면
     │   ├── board.sh · board/              현황판 서버·화면 (/board)
     │   ├── guide-menu.sh · guide-pane.sh  가이드 메뉴 (/guide)
     │   ├── athena-up.sh · athena-layout.sh  athena workspace 고정 배치 — 세션 시작 때 도구 pane 띄우고 정리 · 사이드바 패치판
     │   ├── monitor-pane.sh · agent-monitor.py  로그 모니터 (/monitor)
-    │   ├── herdr-sidebar-patch.sh          herdr-sidebar 패치판 설치 — 미리 빌드한 실행 파일 (patches/herdr-sidebar · athena-up·setup.sh 가 부름)
-    │   ├── herdr-sidebar-build-bin.sh      패치를 고쳤을 때 실행 파일 다시 빌드 (patches/herdr-sidebar/bin)
-    │   ├── herdr-sidebar-reopen.sh         탭마다 Explorer 다시 띄우기 (redeploy 가 다른 workspace 것까지 닫은 뒤 — athena-up 이 부름)
+    │   ├── herdr-sidebar-patch.sh · -build-bin.sh · -reopen.sh  herdr-sidebar 패치판 설치·빌드·Explorer 다시 띄우기 (patches/herdr-sidebar)
     │   └── statusline.sh · mdview.py      상태바 · 터미널 마크다운 뷰어
     ├── 학습
     │   ├── learn-review.mjs (+ -pane.sh)  배우기 검토자 — 머지된 내 PR 로 학습 후보
     │   ├── learn-curator.mjs              30일 안 쓴 스킬 정리 후보 (/sync 끝)
     │   ├── gotchas-check.mjs              낡은 공책 줄 · 나눌 때가 된 공책 정리 후보 (/sync 끝)
-    │   └── learn-eval.mjs · .json         학습 품질 채점 (정답지)
+    │   └── learn-eval.mjs                 학습 품질 채점 (정답지는 팩)
     ├── 지식 문서
-    │   ├── sync-fingerprint.mjs           /sync — 운영 브랜치 지문
-    │   ├── build-derived.mjs              지문 → 서비스 맵·플레이북 표
+    │   ├── sync-fingerprint.mjs           /sync — 운영 브랜치 지문 (기준은 .sync — 팩)
+    │   ├── build-derived.mjs              지문 → 팩의 서비스 맵·플레이북 표
     │   └── check-diagrams.mjs · build-diagram-index.mjs · diagram-coverage.mjs
-    ├── hooks/                             시작 점검 · workspace 배치 · 커밋·push 보호 · 비밀값 노출 막기 · 대화 압축 전후 계획서 저장
-    └── setup.sh · seo-feedback.sh · archive-plans.sh · agent-context.py · branch-candidates.sh
+    ├── lib/                               설정 읽기(코어 + 팩 합치기) · 팩 링크 너머 git · init·scaffold
+    ├── athena.mjs                         bin/athena 본체
+    ├── hooks/                             시작 점검(팩 없으면 /setup 안내) · workspace 배치 · 커밋·push 보호 · 비밀값 노출 막기 · 대화 압축 전후 계획서 저장
+    └── setup.sh · archive-plans.sh · agent-context.py · branch-candidates.sh
+```
+
+회사 팩(`packs/<회사>/`, 별도 레포):
+
+```
+packs/<회사>/
+├── pack.json        레포 목록 · 브랜치 · 에이전트 · 회사 값(GitHub 조직·QA·PR 범위 …)
+├── ROUTING.md       담당 레포·에이전트 표 · 라우팅 규칙 · 검증 명령 · 회사 스킬
+├── agents/ skills/ knowledge/ verify/ diagrams/ docs/ qa/ sync/ archive/
+├── guide/           회사 판 안내 HTML (있으면 /guide 가 이걸 연다)
+└── hooks/           (선택) delegate.sh 에 넣을 환경값
 ```
 
 ## 확장하기
@@ -156,7 +169,7 @@ athena/
 | 추가할 것 | 방법 |
 |---|---|
 | 스킬 | `.claude/skills/<이름>/SKILL.md` — 만들면 `/<이름>` 으로 바로 뜬다 (`call/SKILL.md` 를 복사해 시작) |
-| 에이전트 | `.claude/agents/<이름>.md` — `description` 이 라우팅 문장. 안에 `: `(콜론+공백)를 쓰면 YAML 이 깨진다 |
+| 에이전트 | 레포 담당은 회사 팩 `agents/<이름>.md`(+ `pack.json` 에 레포·에이전트) — 새 레포면 `bin/athena scaffold`. `description` 이 라우팅 문장. 안에 `: `(콜론+공백)를 쓰면 YAML 이 깨진다 |
 | 같이 고칠 곳 | `CLAUDE.md` 표 · `AGENTS.md` · 이 README · `docs/playbook.html` — 아테나에게 "방금 추가한 거 문서에도 반영해줘" |
 
 상세: `docs/extending.md`

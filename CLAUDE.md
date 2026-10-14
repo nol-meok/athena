@@ -71,7 +71,7 @@
 - **Checkpoint 를 갱신한다** — Status·Progress·Next·Validation. 시점은 단계 완료·차단 변화·리뷰 반영·세션 종료(`/new`) 직전(매 턴이 아니다). 정식이면 html `plan-md` 도 같은 턴에 맞춘다(`node scripts/plan-html.mjs <md>` · `commit.sh`·현황판도 맞춘다)
 
 ### 6단계: 정리
-- 끝난 카드는 현황판 완료 칸의 **[아카이브]** — 이슈·계획서를 **`archive/<이름>/` 한 폴더**(`issue.md` · `plan.md` · `meta.json`)로 묶어 보관하고 **git 에 커밋**한다. **git 에 올라가는 건 `archive/` 뿐** — 진행 중·리뷰·완료의 이슈(`issues/*.md`)·계획서(`plans/**`)는 각자 로컬에 갖는다(`.gitignore`). 이슈 워크트리도 정리(미커밋·push 안 된 커밋이 있으면 남긴다). 지나간 일은 현황판 **[아카이브]** 탭에서 찾는다
+- 끝난 카드는 현황판 완료 칸의 **[아카이브]** — 이슈·계획서를 **`archive/<이름>/` 한 폴더**(`issue.md` · `plan.md` · `meta.json`)로 묶어 보관하고 **git 에 커밋**한다(`archive/` 는 회사 팩 링크라 **팩 레포**에 커밋된다). **공유되는 건 `archive/` 뿐** — 진행 중·리뷰·완료의 이슈(`issues/*.md`)·계획서(`plans/**`)는 각자 로컬에 갖는다(`.gitignore`). 이슈 워크트리도 정리(미커밋·push 안 된 커밋이 있으면 남긴다). 지나간 일은 현황판 **[아카이브]** 탭에서 찾는다
 - **계획서 `PR:` 줄의 PR 이 모두 머지되면(어느 base 든 — GitHub `MERGED`) 현황판이 그 계획서를 자동으로 완료(`Status: done — 자동 — PR #N 이 <base> 에 머지됨`)로 옮긴다**(진행 중·리뷰 계획서만, 5분마다 `gh pr view` 로 확인). 머지 없이 닫힌 PR(`CLOSED` — 취소·다른 PR 로 대체)은 판정에서 빼고, 머지된 PR 이 하나도 없으면 옮기지 않는다
 - 이슈는 `issues/README.md` "완료 기준"(확인 결과·후속 정리·fix 커밋·계획 done+PR MERGED)이 채워지면 `완료 가능` 배지 → **아테나가 완료로 옮긴다**(사용자에게 넘기지 않는다). 조건이 덜 찼으면 남은 것을 알린다
 - **학습** — 에이전트(작업 끝·교정·같은 오류 3회)와 배우기 검토자(내 작업의 PR 이 머지되면 현황판이 감지해 계획서·대화·바뀐 코드·리뷰 댓글로)가 올린 학습 후보는 현황판 **[학습] 탭**에 뜬다(기준 `docs/knowledge/common/learning.md`). 사용자가 [넣기]·[고쳐서 넣기]·[버리기] — 넣으면 그 공책(`gotchas.md`) 끝 `## 학습` 절에 한 줄, 쉬운 설명은 `docs/knowledge/learned/`. 학습한 내용도 그 탭에서 수정·삭제. 스킬 후보는 [아테나에게 맡기기] → 아테나가 스킬을 만든다(`docs/extending.md` "학습으로 스킬 만들기"). 팀 공유는 사용자가 "커밋해줘" 할 때 main 에. `/sync` 끝에 `scripts/learn-curator.mjs --write` 가 30일 넘게 안 쓴 스킬을, `scripts/gotchas-check.mjs --write` 가 운영 코드에서 사라진 파일을 가리키는 공책 줄과 나눌 때가 된 공책(공통 2만 자 · 같은 화면 5줄 → 화면 파일 `gotchas/<폴더>.md`)을 정리 후보로 올린다(지우지 않는다 — [학습] 탭에서 줄마다 [지우기]·[그대로 두기], 나누기는 [아테나에게 맡기기])
@@ -112,6 +112,6 @@
 ## 참고 문서
 - **공통 규칙·지식 진입점: `AGENTS.md`** (도구 무관. Codex 등 다른 에이전트도 이걸 읽는다)
 - 지식 베이스: `docs/knowledge/README.md` — 공통 `common/`, 레포별 `<레포>/{rules,structure,patterns,workflows,gotchas}.md`
-- 서비스 맵: `docs/services.md` · 계획서 템플릿: `docs/plan-template.{md,html}`
+- 서비스 맵: `docs/services.md`(회사 팩) · 팩 형식: `docs/pack.md` · 계획서 템플릿: `docs/plan-template.{md,html}`
 - 에이전트 프로필: `.claude/agents/*.md` · 디스패치 프로토콜: `.claude/rules/dispatch-protocol.md`
 - 사용 가이드: `docs/playbook.html`(`/guide 열기`) · 시작하기 `ONBOARDING.md`·`docs/onboarding.html`(`/guide 시작하기`) — 레포 안에서만 관리한다(외부 공유본 없음)
