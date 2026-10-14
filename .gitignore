@@ -45,3 +45,6 @@ scripts/qa/node_modules/
 /pack
 # 이 컴퓨터 설정(팩 경로) — athena.config.example.json 을 복사해 쓴다
 /athena.config.json
+
+# 파이썬 바이트코드 — scripts/lib 의 athena_config·plan_update 를 불러오면 생긴다
+__pycache__/
