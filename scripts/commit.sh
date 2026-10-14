@@ -77,24 +77,36 @@ PROTECTED="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/
 [ "$PROTECTED" = 0 ] || fail "보호 브랜치($BRANCH)에는 커밋하지 않는다"
 
 # ── 2. 스테이징·파일 ────────────────────────────────────────────────────
-git -C "$TOP" diff --cached --quiet || fail "원래 스테이징돼 있던 변경이 있다(남의 변경일 수 있다). git -C $TOP diff --cached --stat 으로 확인 — 이 스크립트는 건드리지 않는다"
-for file in "${FILES[@]}"; do
-  # 글자 그대로 쓰므로 [ ] 는 받는다(동적 라우트). * ? 는 셸 glob 이 덜 펼쳐진 것일 수 있어 거부
-  case "$file" in *'*'*|*'?'*|/*|../*|*/../*) fail "파일은 워크트리 기준 글자 그대로의 상대 경로만: $file" ;; esac
-  [ -d "$TOP/$file" ] && fail "디렉터리는 받지 않는다: $file"
-  [ -n "$(git -C "$TOP" status --porcelain -- "$file")" ] || fail "바뀐 게 없는 파일이다: $file"
-done
-HEAD_BEFORE="$(git -C "$TOP" rev-parse HEAD)"
-
-# 워크트리마다 한 번에 하나만
+# 워크트리마다 한 번에 하나만 — 스테이징을 보기 전에 잡는다(둘이 같이 "스테이징 없음" 을 보고 들어오지 않게 · ship.sh 의 push 도 같은 잠금)
 LOCK="$(git -C "$TOP" rev-parse --git-dir)/hermes-commit.lock"
-mkdir "$LOCK" 2>/dev/null || fail "다른 커밋이 진행 중이다($LOCK)"
+mkdir "$LOCK" 2>/dev/null || fail "다른 커밋·push 가 진행 중이다($LOCK)"
 STAGED=0; COMMITTED=0
 unstage() { git -C "$TOP" reset -q -- "${FILES[@]}" 2>/dev/null; STAGED=0; }
 # 어떤 이유로 끝나든(실패·Ctrl+C·TERM·예상 못 한 오류) 커밋 전이면 이 스크립트가 올린 스테이징을 되돌린다
 cleanup() { [ $STAGED = 1 ] && [ $COMMITTED = 0 ] && unstage; rmdir "$LOCK" 2>/dev/null; rm -f "${UNTRACKED_LIST:-}" 2>/dev/null; }
 trap cleanup EXIT
 trap 'echo "❌ 중단됐다 — 스테이징을 되돌렸다" >&2; exit 130' INT TERM
+
+git -C "$TOP" diff --cached --quiet || fail "원래 스테이징돼 있던 변경이 있다(남의 변경일 수 있다). git -C $TOP diff --cached --stat 으로 확인 — 이 스크립트는 건드리지 않는다"
+for file in "${FILES[@]}"; do
+  # 글자 그대로 쓰므로 [ ] 는 받는다(동적 라우트). * ? 는 셸 glob 이 덜 펼쳐진 것일 수 있어 거부
+  case "$file" in *'*'*|*'?'*|/*|../*|*/../*) fail "파일은 워크트리 기준 글자 그대로의 상대 경로만: $file" ;; esac
+  [ -d "$TOP/$file" ] && fail "디렉터리는 받지 않는다: $file"
+  [ -n "$(git -C "$TOP" status --porcelain -- "$file")" ] || fail "바뀐 게 없는 파일이다: $file"
+  # 비밀 파일은 커밋하지 않는다 — 이름(.env·키·인증서)과 내용(개인키 · .npmrc 의 글자 그대로 토큰)으로 본다. 값은 읽어도 출력하지 않는다
+  name="${file##*/}"
+  case "$name" in
+    .env.example|.env.sample|.env.template|*.env.example) ;;
+    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*|.netrc)
+      fail "비밀 파일로 보인다: $file — 커밋하지 않는다(필요하면 사용자가 직접 확인하고 커밋)" ;;
+  esac
+  if [ -f "$TOP/$file" ]; then
+    grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$TOP/$file" 2>/dev/null && fail "개인키가 들어 있다: $file — 커밋하지 않는다"
+    [ "$name" = .npmrc ] && grep -qE '_authToken=[^$[:space:]]' "$TOP/$file" 2>/dev/null \
+      && fail "토큰 값이 글자 그대로 들어 있다: $file — \${NPM_TOKEN} 같은 참조로 바꾼 뒤 커밋"
+  fi
+done
+HEAD_BEFORE="$(git -C "$TOP" rev-parse HEAD)"
 
 STAGED=1
 git -C "$TOP" add -- "${FILES[@]}" || { unstage; fail "git add 실패"; }
