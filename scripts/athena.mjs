@@ -22,6 +22,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSy
 import { dirname, join, relative, resolve } from 'node:path'
 import { ATHENA_ROOT, loadConfig } from './lib/config.mjs'
 import { initPack, scaffold, scanRepos } from './lib/init.mjs'
+import { maskText } from './qa/live.mjs'
 
 const ROOT = ATHENA_ROOT
 const [command, sub] = process.argv.slice(2)
@@ -154,6 +155,7 @@ const unlink = () => {
 }
 
 // 코어 파일(git 추적 + 미추적, 링크·팩 제외)에서 팩 names 를 찾는다
+// 걸린 줄은 비밀값 모양(key=값 · "key":"값" · Bearer · JWT)을 가린 뒤 보여 준다 — QA 기록과 같은 기준(qa/live.mjs maskText)
 const check = () => {
   const pack = packDir()
   const names = JSON.parse(readFileSync(join(pack, 'pack.json'), 'utf8')).names ?? []
@@ -168,7 +170,7 @@ const check = () => {
     let text
     try { text = readFileSync(join(ROOT, file), 'utf8') } catch { continue }
     if (text.includes('\0')) continue   // 바이너리 — 우연한 바이트 조합이 걸린다
-    text.split('\n').forEach((line, index) => { if (pattern.test(line)) hits.push(`${file}:${index + 1}: ${line.trim().slice(0, 140)}`) })
+    text.split('\n').forEach((line, index) => { if (pattern.test(line)) hits.push(`${file}:${index + 1}: ${maskText(line.trim()).slice(0, 140)}`) })
   }
   if (!hits.length) { console.log(`✅ 코어 파일 ${files.length}개에 회사 이름(${names.length}개) 없음`); return }
   console.log(hits.join('\n'))
