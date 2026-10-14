@@ -14,7 +14,7 @@
  * 드릴다운 노드(build-bundle.py DRILL 의 출발 노드)에 있는 화면은 담긴 것으로 치되, 다른 탭의 일반 노드와 겹쳐도 중복으로 보지 않는다.
  */
 import { readFileSync, readdirSync } from 'node:fs'
-import { join, dirname, resolve } from 'node:path'
+import { basename, join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { loadConfig } from './lib/config.mjs'
@@ -59,7 +59,8 @@ const allSources = diagrams.flatMap((diagram) => collectSources(diagram.json).ma
 const drillNodes = new Set()
 try {
   const bundle = readFileSync(join(dir, 'build-bundle.py'), 'utf8')
-  const tabFiles = [...bundle.slice(bundle.indexOf('TABS = [')).matchAll(/\(\s*"[^"]*",\s*"([^"]+)\.html"/g)].map((match) => match[1] + '.json')
+  // 견본(docs/diagrams/bundle/build-bundle.py)처럼 f"{APP}-…" 로 적은 탭도 읽는다 — APP 은 폴더 이름. # 주석 줄은 뺀다
+  const tabFiles = [...bundle.slice(bundle.indexOf('TABS = [')).matchAll(/^\s*\(\s*f?"[^"]*",\s*f?"([^"]+)\.html"/gm)].map((match) => match[1].replaceAll('{APP}', basename(dir)) + '.json')
   const drillBlock = bundle.slice(bundle.indexOf('DRILL = {'), bundle.indexOf('TABS = ['))
   let currentTab = null
   for (const row of drillBlock.split('\n')) {

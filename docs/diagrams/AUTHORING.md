@@ -63,7 +63,7 @@ docs/diagrams/<앱>/
   <앱>-detail.architecture.json   탭 0 — 상세
   <도메인>.architecture.json       탭 1~N
   *.architecture.html              deliver 결과 (탭마다)
-  build-bundle.py                  탭 번들 생성기 (다른 앱 것을 복사)
+  build-bundle.py                  탭 번들 생성기 (견본 docs/diagrams/bundle/build-bundle.py 를 복사)
   <앱>-architecture.html           번들 — 목록에서 링크하는 것
 ```
 
@@ -92,11 +92,11 @@ docs/diagrams/<앱>/
 
 ### build-bundle.py
 
-다른 앱 것을 복사해 **바꾸는 것만** 바꾼다.
+견본 `docs/diagrams/bundle/build-bundle.py`(또는 다른 앱 것)를 복사해 **바꾸는 것만** 바꾼다. 견본은 앱 이름을 폴더 이름에서, 기준 커밋을 첫 탭 JSON 의 `meta.repository.revision` 에서 읽는다.
 
 | 바꾼다 | 그대로 둔다 |
 |---|---|
-| `TABS`(탭 이름·파일·한 줄 설명), `DRILL`(출발 탭 번호 → 노드 id → 도착 탭), 제목·h1, 화면 수 문구, localStorage 키(`<앱>-diagram-tab`), 출력 파일명 | 드릴다운 스크립트, 스타일. **기준 커밋은 첫 탭 JSON 에서 자동으로 읽는다** — 문구로 박지 않는다 |
+| `TABS`(탭 이름·파일·한 줄 설명), `DRILL`(출발 탭 번호 → 노드 id → 도착 탭 — 드릴다운이 있는 앱 것을 복사했을 때), 화면 수 문구 | 드릴다운 스크립트, 스타일. **기준 커밋은 첫 탭 JSON 에서 자동으로 읽는다** — 문구로 박지 않는다 |
 
 ## 5. archify 제약 — 심층에서 실제로 걸린 것
 

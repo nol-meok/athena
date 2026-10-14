@@ -1,20 +1,27 @@
-import html, os, sys
+"""탭 번들 생성기 견본 — 심층 다이어그램 폴더(docs/diagrams/<앱>/)에 복사해 TABS 만 바꿔 쓴다(docs/diagrams/AUTHORING.md 4절).
+앱 이름은 이 파일이 있는 폴더 이름 · 기준 커밋은 첫 탭 JSON 의 meta.repository.revision 에서 읽는다(문구로 박지 않는다).
+출력: <폴더>/<앱>-architecture.html — 탭마다 deliver 로 만든 html 을 iframe 하나씩 담는다.
+"""
+import html, json, os, sys
 
 D = os.path.dirname(os.path.abspath(__file__))
+APP = os.path.basename(D)
+# (탭 이름, deliver 로 만든 html 파일, 한 줄 설명) — 첫 탭은 상세(<앱>-detail.architecture.html), 그다음 도메인 탭
 TABS = [
-    ("refund-web 개요",    "refund-web.architecture.html",        "앱 하나의 큰 그림"),
-    ("refund-web 상세",    "refund-web-detail.architecture.html", "화면 → 훅 → Relay 도메인 컬럼"),
-    ("환급 플로우",        "refund-flow.workflow.html",           "인증 → 조회 → 신청 → 설문"),
-    ("조회 상세",          "refund-lookup.workflow.html",         "폴링 · 대기열 · 오류 분기"),
-    ("신청 상세",          "refund-apply.workflow.html",          "카드 · 계좌 · 예금주 · 병렬 신청"),
-    ("인증 · 세션 시퀀스", "refund-auth.sequence.html",           "토큰 발급과 만료 처리"),
-    ("간편인증 상태",      "hometax-auth.lifecycle.html",         "서명 대기 · 폴링 · 만료"),
-    ("회원가입 · CI",      "sign-up.workflow.html",               "가입 여부 판정과 본인인증"),
-    ("오류 코드 매핑",     "error-routing.architecture.html",     "코드 → 안내 화면 대응표"),
-    ("상태 저장소",        "refund-state.dataflow.html",          "atom · sessionStorage · 메모리"),
-    ("GraphQL 문서",       "refund-graphql.dataflow.html",        "도메인별 쿼리 · 뮤테이션 60건"),
-    ("트래킹 전송",        "tracking.dataflow.html",              "Mixpanel · 픽셀 · MSK 적재"),
+    (f"{APP} 상세", f"{APP}-detail.architecture.html", "진입 → 셸 → 가드 → 화면군 → 관문 → 외부"),
+    # ("<도메인> 화면", "<도메인>.architecture.html", "<그 탭에 담긴 화면 한 줄>"),
 ]
+
+missing = [file for _, file, _ in TABS if not os.path.exists(os.path.join(D, file))]
+if missing:
+    sys.exit(f"탭 html 이 없다(먼저 deliver 로 만든다): {', '.join(missing)}")
+
+# 기준 커밋 — 첫 탭 JSON 의 meta.repository.revision(모든 탭이 같은 커밋이어야 한다)
+try:
+    with open(os.path.join(D, TABS[0][1].replace(".html", ".json")), encoding="utf-8") as f:
+        REVISION = (json.load(f).get("meta", {}).get("repository", {}).get("revision") or "")[:8]
+except (OSError, ValueError):
+    REVISION = ""
 
 buttons, panels = [], []
 for i, (name, fn, desc) in enumerate(TABS):
@@ -36,7 +43,7 @@ page = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>refund-web 아키텍처 다이어그램</title>
+<title>__APP__ 아키텍처 다이어그램</title>
 <style>
   :root {
     color-scheme: light;
@@ -89,8 +96,8 @@ page = """<!doctype html>
 </head>
 <body>
 <header>
-  <h1>refund-web 아키텍처 다이어그램</h1>
-  <p class="sub">Archify 로 생성 · 저장소 리비전 4be90b5e 기준 · 각 탭은 독립 실행되는 다이어그램입니다</p>
+  <h1>__APP__ 아키텍처 다이어그램</h1>
+  <p class="sub">Archify 로 생성 · 저장소 리비전 __REVISION__ 기준 · 각 탭은 독립 실행되는 다이어그램입니다</p>
   <nav>__BUTTONS__</nav>
 </header>
 <main>__PANELS__</main>
@@ -102,11 +109,11 @@ page = """<!doctype html>
       const idx = tab.dataset.idx;
       tabs.forEach(function (t) { t.classList.toggle('is-active', t === tab); });
       panels.forEach(function (p) { p.classList.toggle('is-active', p.dataset.idx === idx); });
-      try { localStorage.setItem('refund-diagram-tab', idx); } catch (e) {}
+      try { localStorage.setItem('__APP__-diagram-tab', idx); } catch (e) {}
     });
   });
   try {
-    const saved = localStorage.getItem('refund-diagram-tab');
+    const saved = localStorage.getItem('__APP__-diagram-tab');
     if (saved !== null) {
       const target = document.querySelector('.tab[data-idx="' + saved + '"]');
       if (target) target.click();
@@ -116,7 +123,7 @@ page = """<!doctype html>
 </body>
 </html>
 """
-out = os.path.join(D, "refund-web-architecture.html")
+out = os.path.join(D, f"{APP}-architecture.html")
 with open(out, "w", encoding="utf-8") as f:
-    f.write(page.replace("__BUTTONS__", "\n".join(buttons)).replace("__PANELS__", "\n".join(panels)))
+    f.write(page.replace("__APP__", html.escape(APP)).replace("__REVISION__", REVISION or "(모름)").replace("__BUTTONS__", "\n".join(buttons)).replace("__PANELS__", "\n".join(panels)))
 print(out, round(os.path.getsize(out) / 1024 / 1024, 2), "MB")
