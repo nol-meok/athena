@@ -67,6 +67,76 @@ const head = source.slice(0, commentEnd)
 let body = source.slice(commentEnd)
 
 const planBlock = /(<script id="plan-data">\n)const PLAN = ([\s\S]*?)\n(<\/script>)/
+
+// 기존 html 의 PLAN 블록 읽기 — 코드로 실행하지 않고(new Function 금지) 데이터로만 읽는다.
+// 이 스크립트가 쓴 블록은 JSON 이다. 템플릿을 손으로 복사한 블록(따옴표 없는 키 · '…' 문자열 · 주석 · 끝 쉼표)은 JSON 으로 바꿔 읽고,
+// 그 밖의 것(변수·함수 호출·템플릿 문자열 등)이 섞여 있으면 읽지 않고 멈춘다
+function parsePlanLiteral(source) {
+  try {
+    return JSON.parse(source)
+  } catch { /* 템플릿 모양 — 아래에서 바꿔 본다 */ }
+  let out = ''
+  let index = 0
+  const fail = (why) => { throw new Error(`PLAN 블록을 데이터로 읽지 못했다(${why}, ${index}번째 글자) — html 의 PLAN 을 JSON 으로 고치거나 --data 로 다시 만든다`) }
+  while (index < source.length) {
+    const char = source[index]
+    const rest = source.slice(index)
+    if (rest.startsWith('//')) { index = source.indexOf('\n', index); if (index < 0) index = source.length; continue }
+    if (rest.startsWith('/*')) { const end = source.indexOf('*/', index + 2); if (end < 0) fail('닫히지 않은 주석'); index = end + 2; continue }
+    if (char === "'" || char === '"') {
+      let value = ''
+      index += 1
+      while (index < source.length && source[index] !== char) {
+        if (source[index] === '\\') {
+          const next = source[index + 1]
+          const simple = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', '\\': '\\', "'": "'", '"': '"', '/': '/' }
+          if (next in simple) { value += simple[next]; index += 2; continue }
+          if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(source.slice(index + 2, index + 6))) { value += String.fromCharCode(parseInt(source.slice(index + 2, index + 6), 16)); index += 6; continue }
+          fail('알 수 없는 이스케이프')
+        }
+        if (source[index] === '\n') fail('줄이 바뀐 문자열')
+        value += source[index]
+        index += 1
+      }
+      if (index >= source.length) fail('닫히지 않은 문자열')
+      index += 1
+      out += JSON.stringify(value)
+      continue
+    }
+    const word = rest.match(/^[A-Za-z_$][\w$]*/)?.[0]
+    if (word) {
+      // 키(뒤에 :) 면 따옴표를 붙이고, 값이면 true·false·null 만
+      if (/^\s*:/.test(source.slice(index + word.length))) out += JSON.stringify(word)
+      else if (['true', 'false', 'null'].includes(word)) out += word
+      else fail(`데이터가 아닌 이름 ${word}`)
+      index += word.length
+      continue
+    }
+    const number = rest.match(/^-?\d+(\.\d+)?([eE][+-]?\d+)?/)?.[0]
+    if (number) { out += number; index += number.length; continue }
+    if (char === ',') {
+      // 끝 쉼표 — 다음 글자(빈칸·주석 건너뛰고)가 } 나 ] 면 뺀다
+      let ahead = index + 1
+      for (;;) {
+        while (ahead < source.length && /\s/.test(source[ahead])) ahead += 1
+        if (source.startsWith('//', ahead)) { ahead = source.indexOf('\n', ahead); if (ahead < 0) ahead = source.length; continue }
+        if (source.startsWith('/*', ahead)) { const end = source.indexOf('*/', ahead + 2); ahead = end < 0 ? source.length : end + 2; continue }
+        break
+      }
+      if (!'}]'.includes(source[ahead] ?? '')) out += char
+      index += 1
+      continue
+    }
+    if ('{}[]:'.includes(char) || /\s/.test(char)) { out += char; index += 1; continue }
+    fail(`허용하지 않는 글자 ${char}`)
+  }
+  try {
+    return JSON.parse(out)
+  } catch (error) {
+    index = 0
+    return fail(error.message)
+  }
+}
 const current = body.match(planBlock)
 if (!current) {
   console.error('⚠️  html 에서 PLAN 블록을 찾지 못했다')
@@ -76,7 +146,12 @@ let plan
 if (dataPath) {
   plan = JSON.parse(readFileSync(dataPath, 'utf8'))
 } else if (existsSync(htmlPath)) {
-  plan = new Function(`return (${current[2]})`)()
+  try {
+    plan = parsePlanLiteral(current[2])
+  } catch (error) {
+    console.error(`⚠️  ${error.message}`)
+    process.exit(1)
+  }
 } else {
   // 경량 계획서에 처음 결정 콘솔을 붙일 때 — 제목은 md 의 첫 제목
   const title = readFileSync(mdPath, 'utf8').match(/^#\s+(.+)$/m)?.[1] ?? mdFile
@@ -135,7 +210,7 @@ const currentPane = () => {
 }
 const previousPane = (() => {
   try {
-    const previous = new Function(`return (${current[2]})`)()
+    const previous = parsePlanLiteral(current[2])
     return previous.leadPane || previous.hermesPane || ''  // hermesPane — 이름 변경 전 계획서(2026-10)
   } catch {
     return ''
