@@ -5,7 +5,8 @@ repos/<레포> 링크가 athena.config.json 목록대로 다 있으면 아무것
 빠진 게 있으면
   - 기본 레포 루트(reposRoot, 보통 hermes 상위 폴더)에서 찾은 것은 묻지 않고 scripts/setup.sh 로 바로 연결한다
   - 거기에도 없는 레포가 남으면 터미널 안내(systemMessage) + 아테나 지시(additionalContext) — 첫 응답에서 폴더 위치를 묻는다
-FE 에이전트 세션(claude --agent)과 athena 루트가 아닌 cwd(레포·워크트리)에서는 조용히 넘어간다.
+FE 에이전트 세션(claude --agent), 바깥 도구가 띄운 세션(ATHENA_AGENT 가 있음 — 예: 서버의 nhm 창), athena 루트가 아닌 cwd(레포·워크트리)에서는 조용히 넘어간다.
+자동 연결은 링크만 한다(setup.sh --links-only) — 사이드바 패치·QA 의존성·Chromium 같은 공용 도구 설치는 사용자가 /setup·setup.sh 로 직접.
 어떤 오류가 나도 세션 시작을 막지 않는다(항상 exit 0).
 """
 import json
@@ -24,6 +25,9 @@ ATHENA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..'
 def main() -> None:
     # 아테나 세션만 — 에이전트 세션·다른 cwd 는 건너뛴다
     if payload.get('agent_type'):  # claude --agent 로 뜬 세션(실측 2026-09-30)
+        return
+    # 바깥 도구가 띄운 세션(ATHENA_AGENT — 서버의 nhm 창 등)은 아테나를 켜는 자리가 아니다. /setup 안내·자동 연결을 하지 않는다
+    if os.environ.get('ATHENA_AGENT'):
         return
     cwd = os.path.realpath(payload.get('cwd') or os.getcwd())
     if cwd != ATHENA_DIR:
@@ -69,7 +73,7 @@ def main() -> None:
     # 기본 위치에서 찾은 레포는 묻지 않고 바로 연결한다 — 사용자가 setup.sh 를 몰라도 되게
     messages = []
     if found:
-        subprocess.run(['bash', os.path.join(ATHENA_DIR, 'scripts', 'setup.sh')], cwd=ATHENA_DIR,
+        subprocess.run(['bash', os.path.join(ATHENA_DIR, 'scripts', 'setup.sh'), '--links-only'], cwd=ATHENA_DIR,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40, check=False)
         linked = [name for name in found if is_repo(os.path.join(ATHENA_DIR, 'repos', name))]
         if linked:
