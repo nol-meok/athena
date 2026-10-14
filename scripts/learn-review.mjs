@@ -16,7 +16,7 @@
  *   - 출력·이슈에 대화 원문을 옮기지 않는다(LLM 이 쓴 규칙·근거 한 줄만)
  *   - 같은 계획서·같은 HEAD 는 한 번만(계획서 Checkpoint "- Learn review:" 줄)
  */
-import { createReadStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, createReadStream, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { createInterface } from 'node:readline'
@@ -27,9 +27,17 @@ import { githubOrg, loadConfig, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-// 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식)
-const QUEUE_DIR = process.env.ATHENA_LEARN_QUEUE || '/tmp/hermes-learn-queue'
-const WATCHER_PID = join(QUEUE_DIR, '.watcher.pid')
+// 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
+// 체크아웃마다 따로 — 아테나를 두 곳에 받아 두면(회사별) 한 대기열을 섞어 쓰지 않게 체크아웃 경로의 해시를 이름에 붙인다
+const REAL_ROOT = realpathSync(ROOT)
+const ROOT_KEY = createHash('sha1').update(REAL_ROOT).digest('hex').slice(0, 8)
+const QUEUE_DIR = process.env.ATHENA_LEARN_QUEUE || `/tmp/hermes-learn-queue-${ROOT_KEY}`
+// 검토 pane 은 하나 — mkdir 잠금(안에 pid). 실패한 일은 지우지 않고 failed/ 에 남긴다(MAX_ATTEMPTS 번 다시 해 본 뒤)
+const WATCHER_LOCK = join(QUEUE_DIR, '.watcher.lock')
+const FAILED_DIR = join(QUEUE_DIR, 'failed')
+const MAX_ATTEMPTS = 3
+const RETRY_DELAY_MS = 60_000
+const LOG_FILE = `/tmp/hermes-learn-review-${ROOT_KEY}.log`
 const MAX_TRANSCRIPT_CHARS = 60_000
 // 날짜는 한국 시간 — UTC 로 쓰면 아침 9시 전 작업이 어제 날짜가 된다
 const today = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 10)
@@ -444,66 +452,134 @@ const reviewPlan = async (planArg, { head = '', dryRun = false, force = false } 
 }
 
 // ── 대기열 · pane ──────────────────────────────────────────────────────
-const watcherAlive = () => {
+const lockOwner = () => {
   try {
-    process.kill(Number(readFileSync(WATCHER_PID, 'utf8')), 0)
-    return true
+    return Number(readFileSync(join(WATCHER_LOCK, 'pid'), 'utf8')) || 0
   } catch {
-    return false
+    return 0
   }
+}
+const isAlive = (pid) => {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error.code === 'EPERM'
+  }
+}
+const watcherAlive = () => isAlive(lockOwner())
+
+// 잠금 잡기 — pid 를 넣은 임시 폴더를 잠금 이름으로 옮긴다(rename 은 원자적이라 둘이 동시에 잡지 못하고, pid 없는 잠금이 보이는 틈도 없다).
+// 주인이 죽은 잠금은 고유한 이름으로 옮겨 치운다 — 옮긴 것이 살아 있는 주인의 것이면(그 사이 다른 쪽이 새로 잡았다) 되돌리고 물러난다
+function acquireWatcher() {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const staging = mkdtempSync(join(QUEUE_DIR, '.watcher-new-'))
+    writeFileSync(join(staging, 'pid'), String(process.pid))
+    try {
+      renameSync(staging, WATCHER_LOCK)
+      return true
+    } catch {
+      rmSync(staging, { recursive: true, force: true })
+    }
+    if (watcherAlive()) return false
+    const stale = `${WATCHER_LOCK}.stale-${process.pid}-${attempt}`
+    try { renameSync(WATCHER_LOCK, stale) } catch { continue }
+    const taken = Number(readFileSync(join(stale, 'pid'), 'utf8').trim()) || 0
+    if (isAlive(taken)) {
+      try { renameSync(stale, WATCHER_LOCK) } catch { /* 그새 또 잡혔다 */ }
+      return false
+    }
+    rmSync(stale, { recursive: true, force: true })
+  }
+  return false
 }
 
 const enqueue = (planArg, head) => {
   mkdirSync(QUEUE_DIR, { recursive: true })
-  const id = `${Date.now()}-${createHash('sha1').update(planArg + head).digest('hex').slice(0, 6)}`
-  writeFileSync(join(QUEUE_DIR, `${id}.json`), JSON.stringify({ plan: planArg, head }))
+  const digest = createHash('sha1').update(planArg + head).digest('hex').slice(0, 6)
+  // 같은 계획서·표시가 이미 기다리거나 도는 중이면 또 넣지 않는다(현황판이 다시 켜지면 같은 걸 또 넣을 수 있다)
+  if (readdirSync(QUEUE_DIR).some((file) => file.includes(`-${digest}`) && /\.json(\.working)?$/.test(file))) return console.log('📚 이미 배우기 검토 대기열에 있다')
+  const id = `${Date.now()}-${digest}`
+  writeFileSync(join(QUEUE_DIR, `${id}.json`), JSON.stringify({ plan: planArg, head, root: REAL_ROOT, attempts: 0 }))
   if (watcherAlive()) return console.log('📚 배우기 검토 대기열에 넣었다 — "📚 배우기 검토" pane 이 차례로 처리한다')
-  // 방금(30초 안) 다른 요청이 pane 을 띄우는 중이면 또 띄우지 않는다 — 여러 개가 한꺼번에 들어올 때 pid 파일이 생기기 전 틈
+  // 방금(30초 안) 다른 요청이 pane 을 띄우는 중이면 또 띄우지 않는다 — 여러 개가 한꺼번에 들어올 때 잠금이 생기기 전 틈.
+  // 표시 파일은 없을 때만 만든다(wx — 둘이 동시에 만들지 못한다). 오래된 표시는 치우고 다시
   const launching = join(QUEUE_DIR, '.launching')
-  try {
-    if (Date.now() - Number(readFileSync(launching, 'utf8')) < 30_000) return console.log('📚 배우기 검토 대기열에 넣었다 — pane 이 뜨는 중')
-  } catch { /* 없으면 띄운다 */ }
-  writeFileSync(launching, String(Date.now()))
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      closeSync(openSync(launching, 'wx'))
+      break
+    } catch {
+      let age = Infinity
+      try { age = Date.now() - statSync(launching).mtimeMs } catch { /* 그새 치워졌다 */ }
+      if (age < 30_000 || attempt > 0) return console.log('📚 배우기 검토 대기열에 넣었다 — pane 이 뜨는 중')
+      rmSync(launching, { force: true })
+    }
+  }
   // pane 하나 — 이미 있으면 그 pane 에서 다시 돌리고, 없으면 띄운다(herdr 밖이면 뒤에서)
   const launched = spawnSync(join(ROOT, 'scripts/learn-review-pane.sh'), { encoding: 'utf8' })
   if (launched.status === 0) return console.log(`📚 배우기 검토 대기열에 넣었다 — pane ${launched.stdout.trim()}`)
-  const log = '/tmp/hermes-learn-review.log'
-  const logFd = openSync(log, 'a')
+  const logFd = openSync(LOG_FILE, 'a')
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--watch'], { detached: true, stdio: ['ignore', logFd, logFd] })
   child.unref()
-  console.log(`📚 배우기 검토를 뒤에서 시작했다(herdr 밖) — 기록 ${log}`)
+  console.log(`📚 배우기 검토를 뒤에서 시작했다(herdr 밖) — 기록 ${LOG_FILE}`)
+}
+
+// 실패한 일 — 몇 번 다시 해 보고(일시적인 claude·파일 오류), 그래도 안 되면 failed/ 에 이유와 함께 남긴다(지우지 않는다)
+function settleFailure(working, job, error) {
+  const attempts = (job.attempts ?? 0) + 1
+  const base = working.split('/').pop().replace(/\.json\.working$/, '').replace(/-retry\d+$/, '')
+  if (attempts < MAX_ATTEMPTS && !job.foreign) {
+    writeFileSync(join(QUEUE_DIR, `${base}-retry${attempts}.json`), JSON.stringify({ ...job, attempts, notBefore: Date.now() + RETRY_DELAY_MS * attempts, lastError: error.message }))
+    console.log(`  ↻ ${attempts}번째 실패 — ${Math.round((RETRY_DELAY_MS * attempts) / 1000)}초 뒤 다시`)
+  } else {
+    mkdirSync(FAILED_DIR, { recursive: true })
+    writeFileSync(join(FAILED_DIR, `${base}.json`), JSON.stringify({ ...job, attempts, failedAt: new Date().toISOString(), lastError: error.message }, null, 2))
+    console.log(`  ✖ 포기 — ${relative(ROOT, FAILED_DIR) || FAILED_DIR}/${base}.json 에 남겼다(다시 하려면 그 파일을 대기열 폴더로 옮긴다)`)
+  }
 }
 
 const watch = async () => {
   mkdirSync(QUEUE_DIR, { recursive: true })
-  if (watcherAlive()) {
+  if (!acquireWatcher()) {
     console.log('이미 다른 검토 pane 이 돌고 있다 — 여기서는 끝낸다')
     return
   }
-  writeFileSync(WATCHER_PID, String(process.pid))
-  const cleanup = () => { try { rmSync(WATCHER_PID) } catch { /* 없으면 그만 */ } }
+  // 잠금은 내 것일 때만 치운다(다른 쪽이 주인 없는 잠금으로 보고 새로 잡았을 수 있다)
+  const cleanup = () => { if (lockOwner() === process.pid) rmSync(WATCHER_LOCK, { recursive: true, force: true }) }
   process.on('exit', cleanup)
   process.on('SIGINT', () => process.exit(130))
   process.on('SIGHUP', () => process.exit(129))   // pane 을 닫으면 온다
   process.on('SIGTERM', () => process.exit(143))
-  // 지난 검토 프로세스가 처리하다 끊긴 요청을 대기열로 되돌린다
+  rmSync(join(QUEUE_DIR, '.launching'), { force: true })
+  // 지난 검토 프로세스가 처리하다 끊긴 요청을 대기열로 되돌린다 — 잠금을 쥔 뒤라 살아 있는 다른 watcher 의 일이 아니다
   for (const file of readdirSync(QUEUE_DIR).filter((name) => name.endsWith('.json.working'))) {
     try { renameSync(join(QUEUE_DIR, file), join(QUEUE_DIR, file.replace(/\.working$/, ''))) } catch { /* 다른 쪽이 먼저 옮겼다 */ }
   }
   console.log('📚 배우기 검토 — 대기열을 기다린다(내 작업의 PR 이 머지되면 현황판이 넣는다). 끄려면 Ctrl-C')
+  const readJob = (file) => { try { return JSON.parse(readFileSync(join(QUEUE_DIR, file), 'utf8')) } catch { return {} } }
   for (;;) {
-    const next = readdirSync(QUEUE_DIR).filter((file) => file.endsWith('.json')).sort()[0]
+    // 다시 해 볼 시각(notBefore)이 안 된 일은 건너뛴다
+    const next = readdirSync(QUEUE_DIR).filter((file) => file.endsWith('.json')).sort().find((file) => !(readJob(file).notBefore > Date.now()))
     if (!next) {
       await new Promise((done) => setTimeout(done, 5000))
       continue
     }
     const working = join(QUEUE_DIR, `${next}.working`)
     try { renameSync(join(QUEUE_DIR, next), working) } catch { continue }
+    let job = {}
     try {
-      const { plan, head } = JSON.parse(readFileSync(working, 'utf8'))
-      await reviewPlan(plan, { head })
+      job = JSON.parse(readFileSync(working, 'utf8'))
+      // 다른 체크아웃이 넣은 일 — 이 체크아웃의 계획서·팩으로 읽으면 엉뚱한 작업을 배운다
+      if (job.root && job.root !== REAL_ROOT) {
+        job.foreign = true
+        throw new Error(`다른 체크아웃(${job.root})의 일이다`)
+      }
+      await reviewPlan(job.plan, { head: job.head })
     } catch (error) {
       console.log(`  ⚠️ ${error.message}`)
+      settleFailure(working, job, error)
     }
     rmSync(working, { force: true })
     console.log(`── ${new Date().toLocaleTimeString()} 대기 중`)

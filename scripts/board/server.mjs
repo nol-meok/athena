@@ -288,6 +288,9 @@ const enqueueLearn = (planId, mark, infos = []) => {
   if (learnQueued.has(key)) return
   learnQueued.add(key)
   const child = spawn(process.execPath, [join(ROOT, 'scripts/learn-review.mjs'), '--enqueue', '--plan', planId, '--head', mark], { cwd: ROOT, detached: true, stdio: 'ignore' })
+  // 넣지 못했으면 다음 확인 때 다시 넣는다(넣기 전에 표시만 해 두면 이 현황판이 켜져 있는 동안 다시 시도하지 않는다)
+  child.on('exit', (code) => { if (code !== 0) learnQueued.delete(key) })
+  child.on('error', () => learnQueued.delete(key))
   child.unref()
   console.log(`📚 배우기 검토 대기열 ${planId} (${mark})`)
 }
