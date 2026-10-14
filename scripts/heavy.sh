@@ -51,7 +51,10 @@ while ! mkdir "$LOCK" 2>/dev/null; do
   [ $(( $(date +%s) - started )) -lt "$MAX_WAIT" ] || give_up "잠금"
   sleep 5
 done
-echo $$ > "$LOCK/pid"; printf '%s · %s\n' "$WHO" "$*" | cut -c1-160 > "$LOCK/what"
+# 무엇이 도는지(what)는 대기 화면·현황판에 보인다 — 인자 속 비밀값(token=… · --password … · Bearer …)은 가려서 적는다(macOS sed 는 대소문자 무시 플래그가 없어 글자마다 [Tt] 로)
+echo $$ > "$LOCK/pid"; printf '%s · %s\n' "$WHO" "$*" \
+  | sed -E 's/([A-Za-z_-]*([Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww]([Oo][Rr])?[Dd]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh])[A-Za-z_-]*[=:])[^ ]+/\1***/g; s/(--?[A-Za-z-]*([Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Aa][Pp][Ii]-?[Kk][Ee][Yy])[A-Za-z-]*) +[^ -][^ ]*/\1 ***/g; s/([Bb][Ee][Aa][Rr][Ee][Rr]|[Bb][Aa][Ss][Ii][Cc]) +[^ ]+/\1 ***/g' \
+  | cut -c1-160 > "$LOCK/what"
 cleanup() { rm -rf "$LOCK"; }
 trap cleanup EXIT INT TERM HUP
 

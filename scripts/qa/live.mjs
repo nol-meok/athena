@@ -8,7 +8,8 @@
  *   requestTags.set(request, '더미')     route 로 더미·막은 요청에 꼬리표(scenario.mjs)
  *   await startScreencast(page, runDir, 'desktop')   창 없이 도는 페이지의 화면을 live/<칸>.jpg(+ .json 주소)로 계속 덮어쓴다 — /qa-live 가 그린다
  *
- * 헤더(토큰)는 기록하지 않는다. 보낸 값 중 비밀번호·토큰·주민번호 같은 키는 *** 로 가린다.
+ * 헤더(토큰)는 기록하지 않는다. 보낸 값 중 비밀번호·토큰·API 키·인증 값·주민번호 같은 키는 *** 로 가린다.
+ * 오류 문구·화면 주소에 섞인 비밀값(key=값 · "key":"값" · Bearer · JWT)도 가린다.
  */
 import { appendFileSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -18,13 +19,22 @@ export const requestTags = new WeakMap()
 // 기록하지 않는 외부 수집기·위젯 — Mixpanel 은 tracking.mjs 가 이벤트로 따로 남긴다
 const NOISE_HOST = /mixpanel|google|doubleclick|facebook|tiktok|clarity|bing|channel\.io|airbridge|abr\.ge|datadoghq|browser-intake|naver\.(com|net)|kakao|moloco|sentry|hotjar|vercel-insights|daum\.net|ipify\.org/
 const STATIC_FILE = /\.(svg|png|jpe?g|gif|webp|ico|woff2?|ttf|css|js|map|json)$/i
-const SECRET_KEY = /password|passwd|token|secret|resident|jumin|ssn|card(number|no)|cvc/i
+// 가릴 키 — 비밀번호·토큰·API 키·인증(authorization·auth)·쿠키·세션 id·개인키·주민번호·카드·OTP
+const SECRET_KEY = /pass(word|wd)?|token|secret|api[-_]?key|authori[sz]ation|^auth$|credential|cookie|session[-_]?id|private[-_]?key|resident|jumin|ssn|card[-_]?(number|no)|cvc|otp/i
+const SECRET_WORD = String.raw`[\w-]*(?:pass(?:word|wd)?|token|secret|api[-_]?key|authori[sz]ation|auth(?!or)|credential|cookie|session[-_]?id|private[-_]?key|otp)[\w-]*`
 
 const maskSecrets = (value) => {
   if (Array.isArray(value)) return value.map(maskSecrets)
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, SECRET_KEY.test(key) ? '***' : maskSecrets(inner)]))
   return value
 }
+
+// 글자 안의 비밀값 — key=값(주소·폼) · "key":"값"(JSON) · Bearer 값 · JWT 모양(eyJ….….…)
+export const maskText = (text) => String(text ?? '')
+  .replace(new RegExp(`(${SECRET_WORD})=([^&;\\s"']+)`, 'gi'), '$1=***')
+  .replace(new RegExp(`("${SECRET_WORD}"\\s*:\\s*)"[^"]*"`, 'gi'), '$1"***"')
+  .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, '$1 ***')
+  .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+/g, '***')
 
 function describe(request) {
   const url = new URL(request.url())
@@ -77,15 +87,15 @@ export function createLiveLog(runDir) {
       let errors = ''
       if (request.method() === 'POST' && /"query"\s*:\s*"\s*(query|mutation)/.test(request.postData() ?? '')) {
         const body = await response.json().catch(() => null)
-        if (Array.isArray(body?.errors) && body.errors.length) errors = body.errors.map((error) => error.message ?? error.code ?? '').join(' | ').slice(0, 300)
+        if (Array.isArray(body?.errors) && body.errors.length) errors = maskText(body.errors.map((error) => error.message ?? error.code ?? '').join(' | ')).slice(0, 300)
         // 결과 안의 업무 오류 — { result: false, errors: { code, message } } 처럼 200·data 안에 담긴 것(간편인증·환급 토큰 등). 코드·메시지만(값은 안 남긴다)
-        else if (body?.data) errors = payloadErrors(body.data).join(' | ').slice(0, 300)
+        else if (body?.data) errors = maskText(payloadErrors(body.data).join(' | ')).slice(0, 300)
       }
       record(request, response.status(), errors)
     })
     context.on('requestfailed', (request) => {
       const failure = request.failure()?.errorText ?? 'failed'
-      if (!failure.includes('ERR_ABORTED')) record(request, failure)
+      if (!failure.includes('ERR_ABORTED')) record(request, maskText(failure))
     })
   }
   return { write, attach }
@@ -118,7 +128,7 @@ export async function startScreencast(page, runDir, slot) {
     try {
       writeFileSync(join(dir, `${slot}.jpg.tmp`), frame)
       renameSync(join(dir, `${slot}.jpg.tmp`), join(dir, `${slot}.jpg`))
-      writeFileSync(join(dir, `${slot}.json.tmp`), JSON.stringify({ url: page.url(), at: lastWrite }))
+      writeFileSync(join(dir, `${slot}.json.tmp`), JSON.stringify({ url: maskText(page.url()), at: lastWrite }))
       renameSync(join(dir, `${slot}.json.tmp`), join(dir, `${slot}.json`))
     } catch {
       // 보기용 — 못 써도 검사는 계속한다
