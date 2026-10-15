@@ -33,6 +33,10 @@ repos/
 .board-usage.json
 .board-learn-stats.json
 .board-usage.json.*
+# Jev 판정 캐시·호출 기록 (scripts/lib/jev.mjs — 보낸 글은 기록하지 않는다)
+.board-jev-qa.json
+.board-jev-learn.json
+.jev-log.jsonl
 
 # QA 시뮬레이션 (scripts/qa) — 의존성·런 결과·로그인 세션(쿠키, 절대 커밋 금지)
 scripts/qa/node_modules/
