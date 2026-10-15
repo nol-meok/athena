@@ -10,13 +10,18 @@
  *   화면 범위  후보 scope(코드 폴더)가 있으면 — 그 화면 파일(gotchas/<폴더>.md)이 있으면 거기, 없으면 공통 공책에 "[화면 <폴더>]" 를 붙여 넣는다
  *             (나중에 gotchas-check 가 같은 화면 줄을 세어 떼자고 한다). 수정·삭제는 공책 묶음(gotchas.md + gotchas/*.md)에서 표시로 찾는다
  *   정리 후보  kind: tidy (scripts/gotchas-check.mjs) — 낡은 줄 [지우기]·[그대로 두기], 다 처리하면 닫는다. 넣기·버리기 수에 세지 않는다
+ *   Jev 중복  checkLearnWithJev — 후보가 공책 기존 줄에 이미 담겼는지 Jev 가 본다(키가 있을 때만, scripts/lib/jev.mjs).
+ *             아주 높으면(JEV_DISCARD_MIN) 휴지통으로 — 기존 줄은 공책에 그대로라 잃는 것이 없다. 중간이면 카드에 "겹쳐 보여요" 만.
+ *             넣기·고치기·지우기는 Jev 가 하지 않는다(공책은 모든 에이전트가 작업마다 읽는다)
  * 커밋은 하지 않는다 — 사용자가 "커밋해줘" 할 때 아테나가 모아서.
  */
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, normalize, relative, sep } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
 import { gitEach } from '../lib/git.mjs'
+import { askJev, logJev } from '../lib/jev.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const ISSUES = join(ROOT, 'issues')
@@ -99,11 +104,12 @@ const uncommitted = () => {
 }
 
 export const listLearn = () => {
+  const checked = readJevChecks()
   const candidates = existsSync(ISSUES)
     ? readdirSync(ISSUES).filter((file) => isLearnIssue(file))
       .map((file) => ({ file, text: readFileSync(join(ISSUES, file), 'utf8') }))
       .filter(({ text }) => !/^status:\s*(done|wontfix)/m.test(text))
-      .map(({ file, text }) => view(`issues/${file}`, text, { created: statSync(join(ISSUES, file)).mtime.toISOString().slice(0, 10) }))
+      .map(({ file, text }) => view(`issues/${file}`, text, { created: statSync(join(ISSUES, file)).mtime.toISOString().slice(0, 10), jev: jevHintOf(checked[`issues/${file}`]) }))
       .sort((left, right) => right.created.localeCompare(left.created))
     : []
   const learned = existsSync(LEARNED)
@@ -364,4 +370,92 @@ export const removeLearned = (id) => {
   const removed = notebook ? removeLine(notebook, meta.id || basename(path, '.md'), sections['원래 줄'] || '') : false
   toTrash(path)
   return { ok: true, notebookUpdated: removed }
+}
+
+// ── Jev 중복 점검 — 후보가 공책 기존 줄에 이미 담겼는가(scripts/lib/jev.mjs, 키가 있을 때만) ─────────────
+// 점검 기록: 후보 id → { hash, score, line, model, at } — 후보 문장이나 공책이 바뀌면(hash) 다시 본다
+const JEV_FILE = join(ROOT, '.board-jev-learn.json')
+// 처음엔 아주 높게 — 실제 기록(node scripts/lib/jev.mjs --report)을 보고 낮춘다
+const JEV_DISCARD_MIN = 0.95
+const JEV_HINT_MIN = 0.6
+// 줄마다 질문 하나(noul) — 너무 많으면 후보와 낱말이 많이 겹치는 줄부터 이만큼만
+const JEV_MAX_LINES = 60
+// 한 번에 점검할 후보 수(현황판이 1분에 한 번 부른다)
+const JEV_PER_RUN = 3
+const JEV_VERSION = 'learn-dedupe-v1'
+
+const readJevChecks = () => {
+  try { return JSON.parse(readFileSync(JEV_FILE, 'utf8')) } catch { return {} }
+}
+const jevHintOf = (check) => (check && check.score >= JEV_HINT_MIN ? { score: check.score, line: check.line } : null)
+const words = (text) => new Set(String(text).toLowerCase().split(/[^\p{L}\p{N}_.-]+/u).filter((word) => word.length > 1))
+// 공책 묶음의 줄 — "- " 로 시작하는 맨 앞 줄만(학습 표시는 뗀다)
+const notebookRows = (path) => [...new Set(familyOf(path).flatMap((file) => readFileSync(file, 'utf8').split('\n').filter((row) => /^[-*]\s+\S/.test(row)).map(bare)).filter(Boolean))]
+const closestRows = (rows, text) => {
+  if (rows.length <= JEV_MAX_LINES) return rows
+  const own = words(text)
+  return rows.map((row) => ({ row, shared: [...words(row)].filter((word) => own.has(word)).length }))
+    .sort((left, right) => right.shared - left.shared).slice(0, JEV_MAX_LINES).map((entry) => entry.row)
+}
+
+// 점검할 만한 후보 — 공책 함정(스킬·정리 후보 제외), 기존 줄 강화가 아닌 것(강화는 원래 기존 줄과 닮았다)
+const jevTargets = () => (existsSync(ISSUES) ? readdirSync(ISSUES).filter((file) => isLearnIssue(file)) : [])
+  .map((file) => ({ id: `issues/${file}`, text: readFileSync(join(ISSUES, file), 'utf8') }))
+  .filter(({ text }) => !/^status:\s*(done|wontfix)/m.test(text))
+  .map(({ id, text }) => ({ id, item: view(id, text) }))
+  .filter(({ item }) => !item.skill && !item.tidy && !item.strengthen && item.rule && notebookPath(item.target))
+
+const recordJevDiscard = (entry) => {
+  const stats = readStats()
+  stats.jevDiscarded = (stats.jevDiscarded ?? 0) + 1
+  stats.jevRecent = [entry, ...(stats.jevRecent ?? [])].slice(0, 10)
+  try { writeFileSync(STATS, JSON.stringify(stats)) } catch { /* 수만 못 셀 뿐 */ }
+}
+
+// 현황판이 부른다 — 돌려주는 것은 서버 로그용 한 줄들
+export const checkLearnWithJev = async () => {
+  const checked = readJevChecks()
+  const done = []
+  let asked = 0
+  for (const { id, item } of jevTargets()) {
+    if (asked >= JEV_PER_RUN) break
+    const candidateText = `${item.title}\n${item.explain}\n${item.rule}`
+    const rows = closestRows(notebookRows(notebookPath(item.target)), candidateText)
+    const hash = createHash('sha1').update(`${JEV_VERSION}\n${candidateText}\n${rows.join('\n')}`).digest('hex').slice(0, 12)
+    if (checked[id]?.hash === hash) continue
+    if (!rows.length) {
+      checked[id] = { hash, score: 0, line: '', at: today() }
+      continue
+    }
+    asked += 1
+    const answer = await askJev({
+      purpose: 'learn-dedupe',
+      state: `공책(에이전트가 작업 전에 읽는 함정 목록)에 새로 넣으려는 학습 후보\n제목: ${item.title}\n무엇을 배웠나: ${item.explain}\n공책에 넣을 문장: ${item.rule}`,
+      questions: Object.fromEntries(rows.map((row, index) => [`same_${index}`, { type: 'noul', instructions: `이 후보가 알려 주는 함정·규칙이 다음 공책 줄에 이미 담겨 있다(후보를 넣어도 에이전트가 새로 알게 되는 것이 없다): ${row}` }])),
+      meta: { qv: JEV_VERSION, id, rows: rows.length },
+    })
+    if (!answer) continue   // 실패 — 기록하지 않고 다음에 다시 본다
+    const scores = rows.map((row, index) => ({ row, score: Number(answer.answers[`same_${index}`]?.noul ?? 0) }))
+    const best = scores.reduce((top, entry) => (entry.score > top.score ? entry : top), { row: '', score: 0 })
+    if (best.score >= JEV_DISCARD_MIN) {
+      // 왜 버렸는지 후보 파일 끝에 남긴 뒤 휴지통으로 — 되살리면(issues/ 로 옮기면) 이 절을 보고 판단할 수 있다
+      const path = join(ROOT, id)
+      // Jev 를 기다리는 사이 사람이 [넣기]·[버리기] 했으면 손대지 않는다
+      if (!existsSync(path)) continue
+      writeFileSync(path, `${readFileSync(path, 'utf8').trimEnd()}\n\n## Jev 자동 버림 (${today()})\n- 공책 기존 줄에 이미 담긴 내용으로 판단(${Math.round(best.score * 100)}% · ${answer.model}): ${best.row}\n- 잘못 버렸으면 .board-trash/<날짜>/${id} 를 ${id} 로 옮긴다\n`)
+      toTrash(path)
+      recordJevDiscard({ id, title: item.title, line: best.row, score: best.score, at: today() })
+      logJev({ purpose: 'learn-dedupe-discard', id, score: best.score, model: answer.model })
+      delete checked[id]
+      done.push(`학습 후보 자동 버림 ${id} — 기존 줄과 같음 ${Math.round(best.score * 100)}%`)
+      continue
+    }
+    checked[id] = { hash, score: best.score, line: best.row, model: answer.model, at: today() }
+    if (best.score >= JEV_HINT_MIN) done.push(`학습 후보 ${id} — 기존 줄과 겹쳐 보임 ${Math.round(best.score * 100)}%`)
+  }
+  // 없어진 후보(넣기·버리기로 닫힘)의 기록은 지운다
+  const open = new Set(jevTargets().map(({ id }) => id))
+  for (const id of Object.keys(checked)) if (!open.has(id)) delete checked[id]
+  try { writeFileSync(JEV_FILE, JSON.stringify(checked)) } catch { /* 다음에 다시 본다 */ }
+  return done
 }

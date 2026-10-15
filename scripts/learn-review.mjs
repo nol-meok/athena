@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 import { githubOrg, loadConfig, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
+import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
@@ -331,6 +332,25 @@ const askReviewer = (prompt) => {
   return { items: answer.structured_output?.items ?? [], cost: answer.total_cost_usd ?? 0 }
 }
 
+// ── Jev 나란히 판정(scripts/lib/jev.mjs) — 배우기 검토 거름망 후보. 지금은 건너뛰지 않고 점수만 남긴다 ─────
+// 키가 없으면 undefined(기록 안 함) · 실패면 null. 검토자가 받는 것과 같은 재료를 중요한 순서(계획서 → PR → 대화)로 보낸다
+const SHADOW_VERSION = 'learn-trap-v1'
+const shadowJev = async (planFile, planText, prMaterial, transcript) => {
+  if (!jevEnabled()) return undefined
+  const state = `끝난 작업 하나의 기록 — 계획서 · 머지된 PR(리뷰 댓글·바뀐 코드) · 작업 대화(비밀값은 *** 로 가림)\n\n## 계획서\n${clip(maskSecrets(planText).masked, MAX_PLAN_CHARS)}\n\n## 머지된 PR\n${maskSecrets(prMaterial).masked || '(없음)'}\n\n## 작업 대화\n${transcript}`
+  const answer = await askJev({
+    purpose: 'learn-review',
+    state,
+    questions: { trap: { type: 'noul', instructions: '이 작업에서, 같은 레포의 다음 평범한 작업이 다시 밟을 그 레포 고유의 함정(모르면 실제로 잘못 만들게 되는 것)이 드러났다. 이미 코드로 고쳐져 다시 일어날 수 없는 버그·한 번뿐인 사고·사용자 취향은 해당하지 않는다' } },
+    meta: { qv: SHADOW_VERSION, plan: planFile },
+    timeoutMs: 30_000,
+  })
+  if (!answer) return null
+  const score = Number(answer.answers.trap?.noul ?? 0)
+  console.log(`  Jev 나란히 판정 — 함정 있음 ${Math.round(score * 100)}% (건너뛰지 않음 · 기록만)`)
+  return score
+}
+
 // ── learn 이슈 쓰기 — 같은 target 열린 이슈면 덧붙인다 ─────────────────────
 const slug = (text) => text.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase()
 // AGENTS.md 6절과 같은 꼴(파일#절) — 같은 절일 때만 합친다
@@ -445,10 +465,14 @@ const reviewPlan = async (planArg, { head = '', dryRun = false, force = false } 
   console.log(`  세션 ${transcripts.length}개 · 줄인 기록 ${condensed.length}자 → ${transcript.length}자 · 가린 비밀값 ${maskedCount}개 · knowledge ${knowledgeDirs.join(', ') || '없음'}`)
   const prMaterial = pullRequestMaterial(planText)
   console.log(`  계획서 ${planText.length}자 · 머지된 PR 재료 ${prMaterial.length}자`)
+  const jevScore = await shadowJev(planFile, planText, prMaterial, transcript)
   const { items, cost } = askReviewer(buildPrompt(planFile, knowledgeDirs, transcript, planText, prMaterial))
   console.log(`  검토자 답 ${items.length}건 · 비용 $${Number(cost).toFixed(3)}`)
-  const results = items.map((item) => `  - [${item.signal}·${item.kind}${item.kind !== 'skill' ? `·${scopeOf(item)}` : ''}] ${maskSecrets(item.title ?? '').masked}\n    무엇을 배웠나: ${maskSecrets(item.explain ?? '').masked}\n    왜 중요한가: ${maskSecrets(item.ifUnknown ?? '').masked}\n    공책 문장: ${maskSecrets(item.rule).masked}\n    근거(${item.basis}): ${maskSecrets(item.evidence ?? '').masked}\n    ${writeIssue(item, planFile, dryRun)}`)
+  const written = items.map((item) => writeIssue(item, planFile, dryRun))
+  const results = items.map((item, index) => `  - [${item.signal}·${item.kind}${item.kind !== 'skill' ? `·${scopeOf(item)}` : ''}] ${maskSecrets(item.title ?? '').masked}\n    무엇을 배웠나: ${maskSecrets(item.explain ?? '').masked}\n    왜 중요한가: ${maskSecrets(item.ifUnknown ?? '').masked}\n    공책 문장: ${maskSecrets(item.rule).masked}\n    근거(${item.basis}): ${maskSecrets(item.evidence ?? '').masked}\n    ${written[index]}`)
   if (results.length) console.log(results.join('\n'))
+  // Jev 나란히 판정의 실제 결과 — 점수가 낮은데 이슈가 나온 작업이 거름망이 놓쳤을 것(node scripts/lib/jev.mjs --report)
+  if (jevScore !== undefined) logJev({ purpose: 'learn-review-outcome', plan: planFile, jev: jevScore, items: items.length, written: written.filter((line) => !line.startsWith('건너뜀')).length, dryRun })
   if (dryRun) {
     console.log('  (--dry-run — 이슈·계획서를 쓰지 않았다)')
     return

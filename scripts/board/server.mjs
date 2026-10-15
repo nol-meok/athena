@@ -42,13 +42,14 @@ import { fileURLToPath } from 'node:url'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './archive.mjs'
-import { applyLearn, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
+import { applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
 import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
 import { listQaApps, findQaApp, appOfAgent, readRoutes, serverSettings, sessionToken, packQaWarnings, routesWarnings } from '../qa/apps.mjs'
 import { withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
 import { approveRun as approveQaRun } from '../qa/baseline.mjs'
-import { explainProblems } from '../qa/explain.mjs'
+import { explainProblems, guessCause } from '../qa/explain.mjs'
+import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { githubOrg, loadConfig, prLinkPattern } from '../lib/config.mjs'
 
@@ -296,6 +297,45 @@ const enqueueLearn = (planId, mark, infos = []) => {
   console.log(`📚 배우기 검토 대기열 ${planId} (${mark})`)
 }
 const mergedMark = (infos) => `merged-${infos.map((info) => info.number).sort().join('-')}`
+
+// ── Jev(scripts/lib/jev.mjs) — 키(TYPESAFE_API_KEY)가 없으면 아무것도 하지 않는다 ─────────────
+// QA 미분류 오류의 원인 추정 캐시 — 묶음 키(unknownKey) → { cause, confidence, model } · 실패는 { failedAt } 로 두고 10분 뒤 다시 묻는다
+const QA_GUESS_FILE = join(ROOT, '.board-jev-qa.json')
+const QA_GUESS_RETRY_MS = 10 * 60 * 1000
+const QA_GUESS_PER_REQUEST = 5
+const qaGuessing = new Set()
+const readQaGuesses = () => {
+  try { return JSON.parse(readFileSync(QA_GUESS_FILE, 'utf8')) } catch { return {} }
+}
+const askQaGuesses = (reasons, guesses) => {
+  if (!jevEnabled()) return
+  const now = Date.now()
+  const missing = reasons.filter((reason) => reason.unknownKey && !qaGuessing.has(reason.unknownKey))
+    .filter((reason) => { const known = guesses[reason.unknownKey]; return !known || (known.failedAt && now - known.failedAt > QA_GUESS_RETRY_MS) })
+    .slice(0, QA_GUESS_PER_REQUEST)
+  for (const reason of missing) {
+    qaGuessing.add(reason.unknownKey)
+    guessCause(reason).then((guess) => {
+      // 물은 사이 다른 묶음이 먼저 써 뒀을 수 있다 — 지금 파일을 다시 읽어 이 키만 바꾼다
+      const current = readQaGuesses()
+      current[reason.unknownKey] = guess ?? { failedAt: Date.now() }
+      writeAtomic(QA_GUESS_FILE, JSON.stringify(current))
+    }).catch(() => {}).finally(() => qaGuessing.delete(reason.unknownKey))
+  }
+}
+// 학습 후보가 공책 기존 줄과 같은지(scripts/board/learn.mjs checkLearnWithJev) — 1분에 한 번, 겹쳐 돌지 않게(한 번에 후보 몇 개까지는 learn.mjs JEV_PER_RUN)
+const LEARN_JEV_EVERY_MS = 60 * 1000
+let learnJevAt = 0
+let learnJevRunning = false
+const checkLearnJev = () => {
+  if (!jevEnabled() || learnJevRunning || Date.now() - learnJevAt < LEARN_JEV_EVERY_MS) return
+  learnJevAt = Date.now()
+  learnJevRunning = true
+  checkLearnWithJev().then((done) => {
+    for (const line of done) console.log(`🤖 Jev ${line}`)
+    if (done.length) refresh()
+  }).catch((error) => console.error(`⚠️ Jev 학습 후보 점검 실패: ${error.message}`)).finally(() => { learnJevRunning = false })
+}
 
 const autoDonePlans = async (plans) => {
   const targets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && /\/pull\/\d+/.test(plan.pr))
@@ -698,6 +738,7 @@ const refreshOnce = async () => {
   const state = await collect()
   const collectMs = Date.now() - collectStarted
   if (collectMs > 1500) console.log(`⚠️ 현황판 재계산 ${collectMs}ms`)
+  checkLearnJev()
   const hash = createHash('sha1').update(JSON.stringify(state)).digest('hex')
   if (hash === snapshotHash) return
   snapshot = state
@@ -1508,9 +1549,15 @@ const handleRequest = async (request, response) => {
     response.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
     if (!ok) return response.end(JSON.stringify({ error: 'QA 런을 찾지 못했어요' }))
     // 실패 문구를 사람이 읽는 원인으로 묶어 붙인다(scripts/qa/explain.mjs) — run.json 원문은 그대로
+    // 정규식이 모르는 묶음은 Jev 추정을 캐시에서 붙이고, 아직 없으면 뒤에서 물어 둔다(다음 새로고침에 보인다)
     try {
       const run = JSON.parse(readFileSync(file, 'utf8'))
-      for (const screen of run.screens ?? []) if (screen.problems?.length) screen.reasons = explainProblems(screen.problems)
+      const guesses = readQaGuesses()
+      for (const screen of run.screens ?? []) {
+        if (!screen.problems?.length) continue
+        screen.reasons = explainProblems(screen.problems, guesses)
+        askQaGuesses(screen.reasons, guesses)
+      }
       return response.end(JSON.stringify(run))
     } catch {
       return response.end(readFileSync(file))

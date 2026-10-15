@@ -456,6 +456,7 @@
     <div id="learn-view-hermes">
     <h2>아테나 학습 — 작업하며 알게 된 <b>레포 함정</b>을 서비스별 공책(gotchas)에 넣는다. 에이전트가 작업 전에 읽고, git 으로 팀과 공유된다 (기준: docs/knowledge/common/learning.md)</h2>
     <h3 class="learn-h">학습 후보 <span class="n" id="learn-candidate-count"></span> <span class="hint">넣을지 골라 주세요 — 넣은 것만 공책에 들어갑니다</span></h3>
+    <div id="learn-jev" class="where" hidden></div>
     <div id="learn-candidates" class="learn-list"><div class="empty-history">불러오는 중이에요…</div></div>
     <h3 class="learn-h">학습한 내용 <span class="n" id="learn-learned-count"></span> <span class="hint">누르면 펼쳐지고 고치거나 지울 수 있어요</span></h3>
     <div id="learn-learned" class="learn-list"></div>
@@ -1487,6 +1488,7 @@
       ${learnField('explain', '무엇을 배웠나', item.explain, editing, 4)}
       ${learnField('why', '왜 중요한가 — 모르면', item.why, editing, 2)}
       ${ruleBox}
+      ${item.jev ? `<div class="lc-block warn"><h5>🤖 기존 줄과 겹쳐 보여요 — Jev ${Math.round(item.jev.score * 100)}% (추정)</h5><div class="text">${esc(item.jev.line)}</div></div>` : ''}
       ${item.where ? `<div class="where">어디서 배웠나 · ${esc(item.where.replace(/^- /gm, ''))}</div>` : ''}
       <div class="actions">${buttons}</div>
     </div>`;
@@ -1541,8 +1543,12 @@
     if (act === 'save') openLearned(id, false); else document.getElementById('detail').close();
   });
   const renderLearn = () => {
-    const { candidates, learned } = learnData;
+    const { candidates, learned, stats = {} } = learnData;
     document.getElementById('learn-candidate-count').textContent = candidates.length;
+    // Jev 가 공책 기존 줄과 같다고 보고 휴지통으로 옮긴 후보(scripts/board/learn.mjs checkLearnWithJev)
+    const jevBox = document.getElementById('learn-jev');
+    jevBox.hidden = !stats.jevDiscarded;
+    jevBox.innerHTML = stats.jevDiscarded ? `🤖 Jev 가 공책에 이미 있는 내용이라고 본 후보 ${stats.jevDiscarded}개를 버렸어요 — 잘못 버렸으면 .board-trash/&lt;날짜&gt;/issues/ 에서 issues/ 로 옮기면 돌아와요${(stats.jevRecent || []).slice(0, 5).map((entry) => `<br>· ${esc(entry.at)} ${esc(entry.title)} (${Math.round(entry.score * 100)}%) ← ${esc(entry.line)}`).join('')}` : '';
     document.getElementById('learn-learned-count').textContent = learned.length;
     document.getElementById('learn-candidates').innerHTML = candidates.length
       ? candidates.map((item) => learnCard(item, 'candidate', learnEditing === item.id)).join('')
