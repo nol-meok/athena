@@ -78,7 +78,7 @@ scripts/new-branch.sh PROJ-3820 shop-web --dry-run # 먼저 확인 · --in-place
 ```
 - 대상은 레포 이름 일부 또는 설정 `alias` 로 매칭한다. 모노레포는 `<별칭>:<앱>`
 - **base 는 팩 `pack.json` 의 `prBase`** 다(문서 기준 `branch` 와 다르다). 표로 옮겨 적지 말고 config 를 본다
-- **로컬 파일**: `git worktree add` 는 git 무시 파일을 가져오지 않는다. 그래서 워크트리를 만든 뒤 메인 체크아웃의 `.env`·`.env.*`·`.aws/*`·`.claude/settings.local.json`(설정 `worktreeCopy`)을 `scripts/wt-copy-local.sh` 가 **내용 출력 없이** 복사하고 이름만 알린다. 워크트리에 이미 있으면 덮어쓰지 않고, 워크트리에서 git 무시 대상이 아니면 복사하지 않는다. 이전에 만든 워크트리는 `scripts/wt-copy-local.sh --all`(먼저 `--dry-run`). 메인 체크아웃에도 없는 파일(예 care-web `.env`)은 복사할 것이 없다
+- **로컬 파일**: `git worktree add` 는 git 무시 파일을 가져오지 않는다. 그래서 워크트리를 만든 뒤 메인 체크아웃의 `.env`·`.env.*`·`.aws/*`·`.claude/settings.local.json`(설정 `worktreeCopy`)을 `scripts/wt-copy-local.sh` 가 **내용 출력 없이** 복사하고 이름만 알린다. 워크트리에 이미 있으면 덮어쓰지 않고, 워크트리에서 git 무시 대상이 아니면 복사하지 않는다. 이전에 만든 워크트리는 `scripts/wt-copy-local.sh --all`(먼저 `--dry-run`). 메인 체크아웃에도 없는 파일(예: 메인에서도 그 파일을 만들지 않은 레포)은 복사할 것이 없다
 - **이름**: 기본은 `feature/<티켓>`(슬래시가 있으면 준 이름 그대로). 레포 설정 `branchName` 이 있으면 그 관례(예: 앱 버전을 넣는 `feature/v{version}/{ticket}`)로 짓는다. 회사 레포별 관례는 `docs/knowledge/company/git.md`
 - **여러 레포에 걸친 작업은 같은 이름을 쓴다.**
 - **모노레포 `packages/*` 는 따로 따지 않는다.** 앱으로 딴 워크트리에 `packages/**` 가 같이 있다. 두 앱을 같이 작업해도 워크트리는 하나다(`<별칭>:packages` 를 주면 스크립트가 안내하고 멈춘다)
