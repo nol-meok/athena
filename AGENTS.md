@@ -178,7 +178,7 @@ scripts/verify/<레포>.sh [<앱|패키지…>]   # 레포마다 하나 — 목�
 어디에 담나
 - 아테나 자체 작업에서 배운 것은 `target: docs/knowledge/athena/gotchas.md#절`
 - 아테나 루트의 `issues/<YYYYMMDD>-<영역>-learn-<이름>.md`(워크트리 pane 이면 아테나 루트 절대 경로로) — `repo: athena` · `kind: knowledge` · `signal:` · `basis: code | run`(근거가 사용자 말뿐이면 올리지 않는다 — 취향일 수 있다, learning.md 1-1) · `source: <계획서>` · `target: <docs/knowledge/<영역>/gotchas.md#절 | skill:<이름>>`(공책은 gotchas.md 만) · `scope: <코드 폴더>`(그 화면을 만질 때만 걸리면 — 예 `app/orders`, 레포 어디서든이면 생략) · 기존 줄을 고치는 것이면 `strengthen: <그 줄 그대로>`. 본문은 `## 무엇을 배웠나` · `## 왜 중요한가` · `## 공책에 넣을 문장` · `## 어디서 배웠나`(learning.md 3절)
-- 현황판 **[학습] 탭**에 뜬다(아테나·서비스 칸반에는 안 뜬다). 사용자가 [넣기]·[고쳐서 넣기]·[버리기] — 넣으면 공책 끝 `## 학습` 절에 한 줄, 쉬운 설명 기록은 `docs/knowledge/learned/` 에 남고 [학습] 탭에서 언제든 수정·삭제
+- 현황판 **[학습] 탭**에 뜬다(아테나·서비스 칸반에는 안 뜬다). 공책 기존 줄과 같은 내용이라고 Jev 가 아주 높게 본 후보는 휴지통으로 저절로 빠진다(키가 있을 때만 · `learning.md` 6절). 사용자가 [넣기]·[고쳐서 넣기]·[버리기] — 넣으면 공책 끝 `## 학습` 절에 한 줄, 쉬운 설명 기록은 `docs/knowledge/learned/` 에 남고 [학습] 탭에서 언제든 수정·삭제
 - 공책·스킬은 **직접 고치지 않는다.** 스킬 후보("🛠 스킬로 만들까요?")를 고르면 아테나가 만든다(`docs/extending.md` "학습으로 스킬 만들기")
 
 ```
