@@ -5,6 +5,7 @@
 # 아테나 세션이 켜질 때 SessionStart 훅(scripts/hooks/workspace-up.py)이 뒤에서 부른다. 손으로: scripts/athena-up.sh
 # 조건은 "athena 폴더에서 켠 아테나 claude" 하나 — workspace 이름은 보지 않는다(훅이 cwd·에이전트 여부를 거른다)
 # 각 도구 스크립트는 같은 이름의 pane 이 있으면 새로 만들지 않는다 — 다시 돌려도 안전.
+# ATHENA_FIRST_RUN=claude|codex(회사 팩 없음 · 새로 켠 세션 — workspace-up 훅이 넘긴다)면 화면 세팅이 끝난 뒤 그 pane 에 첫 실행 지시를 입력한다
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 [ "${HERDR_ENV:-}" = 1 ] && command -v herdr >/dev/null 2>&1 || exit 0
@@ -32,5 +33,30 @@ if grep -q '패치판 교체' <<<"$out"; then
   "$ATHENA_DIR/scripts/herdr-sidebar-reopen.sh" $had >> "${TMPDIR:-/tmp}/hermes-up.log" 2>&1
   sleep 2
   "$ATHENA_DIR/scripts/athena-layout.sh" "$TAB" >/dev/null 2>&1
+fi
+
+# 첫 실행 자동 시작 — 화면 세팅이 끝났으니 이 pane 에 지시를 입력한다(사용자가 아무것도 치지 않아도 되게).
+# herdr 가 본 그 pane 의 에이전트가 입력을 기다릴 때(idle)만 보낸다. 그사이 working 이 보이면(사용자가 먼저 말을 걸었다 — 아테나가 훅 안내로 첫 실행을 맡는다)
+# 또는 90초 안에 idle 이 안 되면 보내지 않는다
+if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
+  case "$ATHENA_FIRST_RUN" in
+    codex) FIRST_PROMPT="아테나 첫 실행 — 회사 팩이 없다. docs/setup.md 절차를 0단계부터 그대로 해 줘" ;;
+    *) FIRST_PROMPT="/setup" ;;
+  esac
+  pane_status() { herdr pane get "$HERDR_PANE_ID" 2>/dev/null | python3 -c "import sys,json;p=json.load(sys.stdin)['result']['pane'];print(p.get('agent_status') or '')" 2>/dev/null; }
+  result="안 보냄 — 90초 안에 idle 아님"
+  for _ in $(seq 1 90); do
+    status="$(pane_status)"
+    if [ "$status" = working ]; then result="안 보냄 — 사용자가 먼저 입력"; break; fi
+    if [ "$status" = idle ]; then
+      sleep 1   # 입력창이 그려질 틈
+      if [ "$(pane_status)" = idle ]; then
+        herdr pane send-text "$HERDR_PANE_ID" "$FIRST_PROMPT" >/dev/null 2>&1 && sleep 0.5 && herdr pane send-keys "$HERDR_PANE_ID" Enter >/dev/null 2>&1 && result="보냄"
+        break
+      fi
+    fi
+    sleep 1
+  done
+  printf '%s  첫 실행 자동 시작(%s): %s\n' "$(date '+%F %T')" "$ATHENA_FIRST_RUN" "$result" >> "${TMPDIR:-/tmp}/hermes-up.log"
 fi
 exit 0

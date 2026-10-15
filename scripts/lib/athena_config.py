@@ -28,6 +28,16 @@ def load(athena_dir):
     return merged
 
 
+def needs_first_run(athena_dir):
+    """새 회사 첫 실행이 필요한가 — 설정·팩이 없거나 팩에 레포가 0개면 True (docs/setup.md)."""
+    if not os.path.isfile(os.path.join(athena_dir, 'athena.config.json')):
+        return True
+    try:
+        return not load(athena_dir).get('repos')
+    except (SystemExit, ValueError, OSError):
+        return True
+
+
 # 보호 브랜치 — 커밋·push 하지 않는 브랜치. 흔한 운영·개발 브랜치 이름 + 팩에 적힌 그 레포의 운영 기준(branch)·작업 base(prBase·extraPrBases)
 # (팩이 운영 브랜치를 production 같은 이름으로 쓰면 그것도 막힌다 — commit.sh·ship.sh)
 FIXED_PROTECTED = {'dev', 'develop', 'development', 'main', 'master', 'stg', 'staging', 'frz', 'prd', 'prod', 'production'}

@@ -8,7 +8,7 @@
 
 ## 0. 첫 실행 — 회사 팩이 없으면 이것부터
 
-`athena.config.json` 이 없거나, 거기에 `pack` 이 없거나, 팩의 `pack.json` 에 `repos` 가 비었으면 **아직 회사가 등록되지 않은 아테나**다. 사용자의 첫 메시지가 무엇이든 먼저 한 줄로 알리고 **`docs/setup.md`** 절차(레포 찾기 → 팩 → 에이전트·지식 → 서비스 문서 → QA 초안 → 검증 → 지문 → 다이어그램)를 돈다. Claude Code 는 세션 시작 훅이 알려 주고 `/setup` 이 같은 문서를 따른다.
+`athena.config.json` 이 없거나, 거기에 `pack` 이 없거나, 팩의 `pack.json` 에 `repos` 가 비었으면 **아직 회사가 등록되지 않은 아테나**다. 사용자의 첫 메시지가 무엇이든 먼저 한 줄로 알리고 **`docs/setup.md`** 절차(레포 찾기 → 팩 → 에이전트·지식 → 서비스 문서 → QA 초안 → 검증 → 지문 → 다이어그램)를 돈다. herdr 에서 켜면 세션 시작 훅(Claude `.claude/settings.json` · Codex `.codex/hooks.json`)이 화면을 세팅한 뒤 첫 실행 지시를 pane 에 대신 입력한다(Claude `/setup` 이 같은 문서를 따른다).
 환경 변수 `ATHENA_AGENT` 가 있는 창(바깥 도구가 띄운 관리 창)에서는 하지 않는다.
 
 ---

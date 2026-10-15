@@ -50,6 +50,15 @@ const option = (name) => {
 }
 const flag = (name) => argv.includes(`--${name}`)
 
+// 첫 실행 전(회사 팩을 아직 안 만듦 — athena.config.json 없음)에 세션 시작이 이 pane 을 띄우면 죽지 말고 기다린다.
+// 설정이 생기면 같은 인자로 다시 시작한다(설정은 모듈을 읽을 때 한 번만 읽으므로)
+if (flag('watch') && !existsSync(join(ROOT, 'athena.config.json'))) {
+  console.log('📚 배우기 검토 — 회사 팩이 아직 없다. 첫 실행(/setup)이 끝나면 저절로 시작한다')
+  while (!existsSync(join(ROOT, 'athena.config.json'))) await new Promise((done) => setTimeout(done, 10_000))
+  const child = spawnSync(process.execPath, process.argv.slice(1), { stdio: 'inherit' })
+  process.exit(child.status ?? 1)
+}
+
 // ── 계획서 → 담당 에이전트 → knowledge 폴더 ─────────────────────────────
 const config = loadConfig(ROOT)
 const ORG = githubOrg(config)
