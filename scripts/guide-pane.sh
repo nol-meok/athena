@@ -23,7 +23,8 @@ if [ "${HERDR_ENV:-}" = 1 ] && command -v herdr >/dev/null 2>&1; then
   # 이 탭에 이미 같은 이름의 pane 이 있으면 새로 쪼개지 않고 그 자리에서 다시 띄운다
   EXISTING="$(herdr pane list 2>/dev/null | python3 -c "import sys,json;print(next((p['pane_id'] for p in json.load(sys.stdin)['result']['panes'] if p['tab_id']=='${HERDR_TAB_ID:-}' and p.get('label')=='$LABEL'),''))" 2>/dev/null)"
   if [ -n "$EXISTING" ]; then
-    herdr pane send-text "$EXISTING" q >/dev/null 2>&1; sleep 0.5   # 떠 있는 메뉴·뷰어를 닫는다
+    # 떠 있는 메뉴·뷰어를 닫는다 — 빈 셸(herdr 재시작으로 복원된 pane)이면 q 가 명령줄에 남아 "qenv …" 가 되므로 보내지 않는다
+    "$ATHENA_DIR/scripts/lib/pane-is-shell.sh" "$EXISTING" || { herdr pane send-text "$EXISTING" q >/dev/null 2>&1; sleep 0.5; }
     herdr pane run "$EXISTING" env "ATHENA_CLAUDE_PANE=${HERDR_PANE_ID:-}" "${CMD[@]}" >/dev/null
     "$ATHENA_DIR/scripts/athena-layout.sh" "${HERDR_TAB_ID:-}" >/dev/null 2>&1 || true
     echo "$EXISTING (재사용)"

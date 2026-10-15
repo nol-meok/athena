@@ -15,6 +15,8 @@ ATHENA_BOARD_NO_BROWSER=1 "$ATHENA_DIR/scripts/board.sh" >/dev/null 2>&1
 "$ATHENA_DIR/scripts/monitor-pane.sh" >/dev/null 2>&1
 "$ATHENA_DIR/scripts/learn-review-pane.sh" >/dev/null 2>&1
 "$ATHENA_DIR/scripts/guide-pane.sh" >/dev/null 2>&1
+# Explorer 는 사이드바 플러그인이 띄우지만, herdr 재시작으로 자리만 복원된 빈 셸이면 플러그인이 이름만 보고 건너뛴다 — 그 자리에서 다시 띄운다(없으면 아무것도 안 한다)
+"$ATHENA_DIR/scripts/herdr-sidebar-reopen.sh" "$TAB" --only-restored >/dev/null 2>&1
 "$ATHENA_DIR/scripts/athena-layout.sh" "$TAB" >/dev/null 2>&1
 
 # 사이드바 패치판(Explorer 에서 바뀐 파일 클릭 → diff) — 없으면 고정 버전 설치 + 미리 빌드한 실행 파일, 최신이면 바로 끝난다.
