@@ -24,6 +24,7 @@
 - (회사에 사내 발행 패키지가 있으면) **패키지 레지스트리 읽기 토큰** — 회사 팩 안내(`pack/ROUTING.md`)를 따른다. 레포 `.npmrc` 가 아니라 **`~/.npmrc` 에** 넣는다. 토큰 값은 어디에도 붙여 넣거나 공유하지 않는다
 - **claude.ai 계정에 Atlassian 커넥터 연결**(설정 → Connectors) — 아테나와 모든 FE 에이전트·reviewer 가 Jira 티켓·Confluence 기획서를 **읽는다**(쓰기는 없다 — 이슈 생성·댓글은 사람이)
 - 레포마다 `.env` — 각 레포 안내대로 만든다(일부는 `pnpm gen:env`, AWS 자격 필요). 워크트리를 만들 때 메인 체크아웃의 `.env*` 가 자동 복사된다
+- (선택) **TypeSafe Jev 키 — 각자 본인 키**(https://console.typesafe.ai/keys, 유료 · 사용량은 키 주인에게 청구). `~/.zshrc` 에 `export TYPESAFE_API_KEY=…` 를 넣고 현황판을 다시 켠다. 넣으면 QA 실패 원인 추정 · 학습 후보 중복 자동 버리기 · 배우기 검토 나란히 판정이 켜진다(`docs/knowledge/common/learning.md` 6절). **없으면 지금처럼 Jev 없이 그대로 돈다.** 남의 키를 빌려 쓰거나 나눠 주지 않는다. 잠깐 끄려면 `ATHENA_JEV=off`
 
 ## 2. 설치
 

@@ -16,7 +16,7 @@
  *   learn-review     배우기 검토 나란히 판정(scripts/learn-review.mjs) — 건너뛰지 않고 기록만, 놓치는 비율을 잰 뒤 바꾼다
  *
  * 설정(환경 변수) — 키 값은 어디에도 출력하지 않는다
- *   TYPESAFE_API_KEY   없으면 Jev 를 부르지 않는다
+ *   TYPESAFE_API_KEY   없으면 Jev 를 부르지 않는다. 사람마다 본인 키(나눠 쓰지 않는다 — 사용량은 키 주인에게, SaaS 에서도 고객이 자기 키를 넣는 방식)
  *   ATHENA_JEV=off     키가 있어도 끈다
  *   TYPESAFE_API_URL   주소 바꾸기(시험용 가짜 서버) — 기본 https://api.typesafe.ai/v1/systemone
  *
