@@ -15,14 +15,18 @@
  *   learn-dedupe     학습 후보가 공책 기존 줄과 같은지(scripts/board/learn.mjs) — 아주 높으면 휴지통, 중간이면 [학습] 탭 힌트
  *   learn-review     배우기 검토 나란히 판정(scripts/learn-review.mjs) — 건너뛰지 않고 기록만, 놓치는 비율을 잰 뒤 바꾼다
  *
- * 설정(환경 변수) — 키 값은 어디에도 출력하지 않는다
- *   TYPESAFE_API_KEY   없으면 Jev 를 부르지 않는다. 사람마다 본인 키(나눠 쓰지 않는다 — 사용량은 키 주인에게, SaaS 에서도 고객이 자기 키를 넣는 방식)
+ * 키 — 사람마다 본인 키(나눠 쓰지 않는다 — 사용량은 키 주인에게, SaaS 에서도 고객이 자기 키를 넣는 방식). 값은 어디에도 출력하지 않는다
+ *   등록: node scripts/jev-key.mjs (사용자가 직접 치는 입력 창 — 대화창에 키를 받지 않는다) → ~/.config/athena/typesafe.key (권한 600)
+ *   환경 변수 TYPESAFE_API_KEY 가 있으면 그게 먼저다. 둘 다 없으면 Jev 를 부르지 않는다
+ *   부를 때마다 다시 읽는다 — 등록·지우기가 현황판·배우기 검토를 다시 켜지 않아도 바로 먹는다
+ * 설정(환경 변수)
  *   ATHENA_JEV=off     키가 있어도 끈다
  *   TYPESAFE_API_URL   주소 바꾸기(시험용 가짜 서버) — 기본 https://api.typesafe.ai/v1/systemone
  *
  * 보내는 글은 비밀값 모양(key=값 · "key":"값" · Bearer · JWT)을 한 번 더 가린다(qa/live.mjs maskText). 보내는 글 자체는 기록하지 않는다
  */
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { maskText } from '../qa/live.mjs'
@@ -36,7 +40,31 @@ const MAX_STATE_CHARS = 60_000
 // 블로그 공개 가격(2026-10-15 확인) — 입력 $0.042 / 100만 토큰, 출력 무료. 보고용 추정일 뿐이다
 const INPUT_USD_PER_TOKEN = 0.042 / 1_000_000
 
-export const jevEnabled = () => Boolean(process.env.TYPESAFE_API_KEY) && process.env.ATHENA_JEV !== 'off'
+// 레포 밖, 이 사람 컴퓨터에만 — 이름이 .key 라 비밀값 보호 훅(scripts/hooks/secret-guard.py)이 에이전트의 읽기를 막는다
+export const JEV_KEY_FILE = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'athena', 'typesafe.key')
+const readKeyFile = () => {
+  try { return readFileSync(JEV_KEY_FILE, 'utf8').trim() } catch { return '' }
+}
+// 키가 어디서 오나 — 'env' | 'file' | ''
+export const jevKeySource = () => (process.env.TYPESAFE_API_KEY ? 'env' : readKeyFile() ? 'file' : '')
+const jevKey = () => process.env.TYPESAFE_API_KEY || readKeyFile()
+
+export const jevEnabled = () => Boolean(jevKeySource()) && process.env.ATHENA_JEV !== 'off'
+
+// 키가 맞는지 — 아주 작은 질문 하나로 HTTP 상태만 본다(키 값은 돌려주지 않는다). 네트워크 실패면 0
+export async function checkJevKey(key = jevKey()) {
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state: '키 확인', model: MODEL, questions: { ok: { type: 'noul', instructions: '이 글은 비어 있지 않다' } } }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    return response.status
+  } catch {
+    return 0
+  }
+}
 
 export const logJev = (entry) => {
   try {
@@ -56,7 +84,7 @@ export async function askJev({ purpose, state, questions, meta = {}, timeoutMs =
   try {
     const response = await fetch(API_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.TYPESAFE_API_KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${jevKey()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: text, model: MODEL, questions }),
       signal: AbortSignal.timeout(timeoutMs),
     })
@@ -78,7 +106,7 @@ const readLog = () => (existsSync(JEV_LOG) ? readFileSync(JEV_LOG, 'utf8').split
 function report() {
   const entries = readLog()
   if (!entries.length) {
-    console.log(`Jev 기록이 아직 없다 (${JEV_LOG}) — 키: ${jevEnabled() ? '있음' : '없음 또는 꺼짐'}`)
+    console.log(`Jev 기록이 아직 없다 (${JEV_LOG}) — 키: ${jevEnabled() ? '있음' : '없음 또는 꺼짐'} (node scripts/jev-key.mjs --status)`)
     return
   }
   const calls = entries.filter((entry) => entry.ok !== undefined)
