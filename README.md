@@ -136,7 +136,9 @@ athena/                        ← 코어
     │   ├── guide-menu.sh · guide-pane.sh  가이드 메뉴 (/guide)
     │   ├── athena-up.sh · athena-layout.sh  athena workspace 고정 배치 — 세션 시작 때 도구 pane 띄우고 정리 · 사이드바 패치판
     │   ├── monitor-pane.sh · agent-monitor.py  로그 모니터 (/monitor)
-    │   ├── herdr-sidebar-patch.sh · -build-bin.sh · -reopen.sh  herdr-sidebar 패치판 설치·빌드·Explorer 다시 띄우기 (patches/herdr-sidebar)
+    │   ├── screen · lib/screen.py · lib/screen.mjs  화면 계층 — pane·탭·workspace 는 여기로만 (지금 백엔드 herdr · ATHENA_SCREEN)
+    │   ├── screen-lint.sh · screen-check/  화면 계층 지킴이 · 가짜 herdr 회귀 검사
+    │   ├── herdr-sidebar-patch.sh · -build-bin.sh · -reopen.sh · -ensure.sh  herdr-sidebar 패치판 설치·빌드·Explorer 다시 띄우기 (patches/herdr-sidebar)
     │   └── statusline.sh · mdview.py      상태바 · 터미널 마크다운 뷰어
     ├── 학습
     │   ├── learn-review.mjs (+ -pane.sh)  배우기 검토자 — 머지된 내 PR 로 학습 후보

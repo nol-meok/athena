@@ -734,6 +734,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
     ├── setup.sh               <span class="c">repos/ 링크 + 도구 점검 + QA 도구(Playwright) 설치 — 링크는 claude 를 켤 때 훅(hooks/setup-check.py)이 알아서, 나머지는 QA 를 쓸 때 한 번</span>
     ├── verify/&lt;레포&gt;.sh        <span class="c">표준 검증 (lint·타입·테스트 → 표 요약). 에이전트·reviewer 공용</span>
     ├── delegate.sh            <span class="c">위임을 herdr pane 에서 보이게 실행 (claude --agent)</span>
+    ├── screen                 <span class="c">화면 계층 — pane·탭·workspace 는 여기로만 (lib/screen.py · lib/screen.mjs · 지금 백엔드 herdr)</span>
     ├── commit.sh              <span class="c">에이전트 로컬 커밋 ("커밋해줘")</span>
     ├── ship.sh                <span class="c">push + draft PR ("PR 올려줘", 레포 하나짜리)</span>
     ├── agent-monitor.py       <span class="c">서브에이전트·pane 에이전트 로그 실시간 모니터 (렌더러)</span>

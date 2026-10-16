@@ -19,7 +19,7 @@
 - **레포를 넘는 작업은 순차로 보낸다.** 공유 패키지를 먼저 끝내고 그 결과를 소비 레포 에이전트에 넘긴다. 두 workspace 를 동시에 띄우지 않는다
 - 어느 workspace·탭에 띄웠는지 사용자에게 한 줄 알린다
 
-**기본은 보이는 pane**: `scripts/delegate.sh <에이전트명> --plan <계획서>` 으로 herdr pane 에 `claude --agent <이름>` 세션을 띄운다(사용자가 진행 과정을 볼 수 있다). **프롬프트 없이 열어 그 pane 안에서 작업을 지시하는 것이 기본**이다 — 대화를 이어가며 범위를 좁힐 수 있다. 한 번에 끝나는 조사라면 두 번째 인자로 프롬프트를 실어 보낸다. 워크트리에서 작업하면 `--cwd <경로>`. 여러 에이전트를 병렬로 보낼 때는 pane 을 여러 개 연다. 결과는 `herdr pane read <id>` 로 읽고, 완료 대기는 `herdr pane wait-output` 또는 사용자에게 알린다.
+**기본은 보이는 pane**: `scripts/delegate.sh <에이전트명> --plan <계획서>` 으로 herdr pane 에 `claude --agent <이름>` 세션을 띄운다(사용자가 진행 과정을 볼 수 있다). **프롬프트 없이 열어 그 pane 안에서 작업을 지시하는 것이 기본**이다 — 대화를 이어가며 범위를 좁힐 수 있다. 한 번에 끝나는 조사라면 두 번째 인자로 프롬프트를 실어 보낸다. 워크트리에서 작업하면 `--cwd <경로>`. 여러 에이전트를 병렬로 보낼 때는 pane 을 여러 개 연다. 결과는 `scripts/screen pane read <id>` 로 읽고, 완료 대기는 `scripts/screen pane wait-output <id> --match <글자>` 또는 사용자에게 알린다(pane 은 화면 계층 `scripts/screen` 으로만 다룬다 — herdr 를 직접 부르지 않는다).
 
 부득이 Agent 도구(백그라운드, `subagent_type`)를 쓸 때는 `scripts/monitor-pane.sh`(사용자는 `/monitor`) 로 실시간 로그 모니터를 pane 에 띄우고, 어느 pane 인지 사용자에게 한 줄 알린다. 이미 모니터 pane 이 있으면 새로 만들지 않고 그 pane 에서 다시 실행된다.
 
