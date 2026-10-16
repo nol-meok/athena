@@ -37,8 +37,10 @@ OUT="$("$SCREEN" pane split --target self --direction right --ratio 0.5 --cwd "$
   echo "⚠️  herdr pane split 실패: $OUT" >&2; exit 1; }   # screen-lint: 안내 문구
 PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
 sleep 1
+# pane run 은 단어를 따옴표 없이 이어 붙여 한 줄로 친다 — bash -c "<한 줄>" 로 넘기면 bash 가 첫 단어(스크립트)만 돌리고
+# --stay --recent 는 $0·$1 로 사라진다. 셸 따옴표를 붙인 한 줄 하나만 넘긴다(learn-review-pane.sh 와 같은 방식)
 RUN_SH="$(printf '%q ' "${CMD[@]}")"
-"$SCREEN" pane run "$PANE" bash -c "$RUN_SH" >/dev/null
+"$SCREEN" pane run "$PANE" "$RUN_SH" >/dev/null
 "$SCREEN" pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
 "$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
 echo "$PANE"
