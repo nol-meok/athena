@@ -14,41 +14,31 @@ MINUTES="${1:-}"
 CMD=("$ATHENA_DIR/scripts/agent-monitor.py" --stay --recent)
 [ -n "$MINUTES" ] && CMD+=("$MINUTES")
 
-if [ "${HERDR_ENV:-}" != 1 ] || ! command -v herdr >/dev/null 2>&1; then
+SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
+if ! "$SCREEN" inside; then
   echo "herdr 밖입니다. 직접 실행하세요:  ${CMD[*]}" >&2
   exit 1
 fi
+eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다
 
-# 이미 떠 있는 모니터 pane 찾기 (같은 워크스페이스 우선)
-PANE="$(herdr pane list 2>/dev/null | python3 -c '
-import sys, json
-cur, label = sys.argv[1], sys.argv[2]
-workspace = cur.split(":")[0] if ":" in cur else ""
-try:
-    panes = json.load(sys.stdin)["result"]["panes"]
-except Exception:
-    sys.exit(0)
-found = [p for p in panes if p.get("label") == label]
-if workspace:
-    found = [p for p in found if p.get("workspace_id") == workspace] or found
-print(found[0]["pane_id"] if found else "")
-' "${HERDR_PANE_ID:-}" "$LABEL")"
+# 이미 떠 있는 모니터 pane 찾기 (부른 pane 의 워크스페이스 우선)
+PANE="$("$SCREEN" pane list --label "$LABEL" --prefer-workspace self --format id 2>/dev/null)"
 
 if [ -n "$PANE" ]; then
-  herdr pane send-keys "$PANE" C-c >/dev/null 2>&1 || true   # 돌고 있던 모니터를 먼저 끊는다
+  "$SCREEN" pane send-keys "$PANE" C-c >/dev/null 2>&1 || true   # 돌고 있던 모니터를 먼저 끊는다
   sleep 1
-  herdr pane run "$PANE" "${CMD[@]}" >/dev/null
+  "$SCREEN" pane run "$PANE" "${CMD[@]}" >/dev/null
   echo "$PANE (재사용)"
   exit 0
 fi
 
-# 부른 pane(HERDR_PANE_ID) 옆을 나눈다 — --current(포커스된 pane)는 뒤에서 돌 때 엉뚱한 곳을 가른다
-OUT="$(herdr pane split ${HERDR_PANE_ID:+--pane} ${HERDR_PANE_ID:---current} --direction right --ratio 0.5 --cwd "$ATHENA_DIR" --no-focus)" || {
-  echo "⚠️  herdr pane split 실패: $OUT" >&2; exit 1; }
-PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])')"
+# 부른 pane 옆을 나눈다(--target self) — 포커스된 pane 은 뒤에서 돌 때 엉뚱한 곳을 가른다
+OUT="$("$SCREEN" pane split --target self --direction right --ratio 0.5 --cwd "$ATHENA_DIR" --no-focus)" || {
+  echo "⚠️  herdr pane split 실패: $OUT" >&2; exit 1; }   # screen-lint: 안내 문구
+PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
 sleep 1
 RUN_SH="$(printf '%q ' "${CMD[@]}")"
-herdr pane run "$PANE" bash -c "$RUN_SH" >/dev/null
-herdr pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
-"$ATHENA_DIR/scripts/athena-layout.sh" "${HERDR_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
+"$SCREEN" pane run "$PANE" bash -c "$RUN_SH" >/dev/null
+"$SCREEN" pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
+"$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
 echo "$PANE"

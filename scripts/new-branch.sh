@@ -222,8 +222,12 @@ done
 
 # 에이전트 pane 안에서 브랜치를 새로 정했으면 pane 이름을 그 브랜치로 바꾼다.
 # ATHENA_AGENT 는 delegate.sh 가 에이전트 pane 에만 넣는다(아테나 pane 에서 돌리면 이름을 건드리지 않는다)
-if [ $created -gt 0 ] && [ $DRY_RUN -eq 0 ] && [ -n "${ATHENA_AGENT:-}" ] && [ -n "${HERDR_PANE_ID:-}" ] && command -v herdr >/dev/null 2>&1; then
-  herdr pane rename "$HERDR_PANE_ID" "🤖 $ATHENA_AGENT · $BRANCH" >/dev/null 2>&1 && echo "🏷  pane 이름: 🤖 $ATHENA_AGENT · $BRANCH"
+# (부른 pane 은 화면 계층 self — 서버에 묻지 않고 환경에서. 화면 백엔드가 없으면 이름 바꾸기가 실패해 조용히 넘어간다)
+if [ $created -gt 0 ] && [ $DRY_RUN -eq 0 ] && [ -n "${ATHENA_AGENT:-}" ]; then
+  eval "$("$ROOT/scripts/screen" self --format sh 2>/dev/null)"
+  if [ -n "${SCREEN_PANE_ID:-}" ]; then
+    "$ROOT/scripts/screen" pane rename "$SCREEN_PANE_ID" "🤖 $ATHENA_AGENT · $BRANCH" >/dev/null 2>&1 && echo "🏷  pane 이름: 🤖 $ATHENA_AGENT · $BRANCH"
+  fi
 fi
 
 echo ""

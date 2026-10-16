@@ -36,28 +36,22 @@ if is_up; then
   echo "$URL (이미 떠 있음)"
 else
   CMD="ATHENA_BOARD_PORT=$PORT node $(printf '%q' "$ATHENA_DIR/scripts/board/server.mjs")"
-  if [ "${HERDR_ENV:-}" = 1 ] && command -v herdr >/dev/null 2>&1; then
-    # 같은 이름의 pane 이 있으면 거기서 다시 띄운다
-    PANE="$(herdr pane list 2>/dev/null | python3 -c '
-import sys, json
-try:
-    panes = json.load(sys.stdin)["result"]["panes"]
-except Exception:
-    sys.exit(0)
-found = [p for p in panes if p.get("label") == sys.argv[1] or p.get("name") == sys.argv[1]]
-print(found[0]["pane_id"] if found else "")
-' "$LABEL")"
+  SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
+  if "$SCREEN" inside; then
+    eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다
+    # 같은 이름의 pane 이 있으면(어느 workspace 든) 거기서 다시 띄운다
+    PANE="$("$SCREEN" pane list --label "$LABEL" --format id 2>/dev/null)"
     if [ -z "$PANE" ]; then
-      # 부른 pane(HERDR_PANE_ID) 옆을 나눈다 — --current(포커스된 pane)는 뒤에서 돌 때 엉뚱한 곳을 가른다
-      OUT="$(herdr pane split ${HERDR_PANE_ID:+--pane} ${HERDR_PANE_ID:---current} --direction down --ratio 0.25 --cwd "$ATHENA_DIR" --no-focus)" || {
-        echo "⚠️  herdr pane split 실패: $OUT" >&2; exit 1; }
-      PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])')"
+      # 부른 pane 옆을 나눈다(--target self) — 포커스된 pane 은 뒤에서 돌 때 엉뚱한 곳을 가른다
+      OUT="$("$SCREEN" pane split --target self --direction down --ratio 0.25 --cwd "$ATHENA_DIR" --no-focus)" || {
+        echo "⚠️  herdr pane split 실패: $OUT" >&2; exit 1; }   # screen-lint: 안내 문구
+      PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
       sleep 1
     fi
-    # herdr pane run 은 인자를 따옴표 없이 이어 붙인다(bash -c "..." 가 깨진다) — env 로 바로 실행한다
-    herdr pane run "$PANE" env "ATHENA_BOARD_PORT=$PORT" node "$ATHENA_DIR/scripts/board/server.mjs" >/dev/null
-    herdr pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
-    "$ATHENA_DIR/scripts/athena-layout.sh" "${HERDR_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
+    # pane run 은 인자를 따옴표 없이 이어 붙인다(bash -c "..." 가 깨진다) — env 로 바로 실행한다
+    "$SCREEN" pane run "$PANE" env "ATHENA_BOARD_PORT=$PORT" node "$ATHENA_DIR/scripts/board/server.mjs" >/dev/null
+    "$SCREEN" pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
+    "$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
     PLACE="pane $PANE"
   else
     nohup bash -c "$CMD" >/tmp/hermes-board.log 2>&1 &
