@@ -16,6 +16,8 @@
   Workspace {id, label, active_tab_id, focused}
   Layout    {area:{x,y,width,height}, panes:[{id, rect:{x,y,width,height}}]}
   Self      {inside, backend, pane_id, tab_id, workspace_id}
+            inside = 환경상 화면 pane 안에서 켜졌다(서버에 묻지 않음 — herdr 면 HERDR_ENV=1).
+            inside 동작(scripts/screen inside)은 그 위에 백엔드 명령까지 있어 지금 조작할 수 있는지다(herdr 면 + herdr 명령)
 실패: 종료 코드 1 이상. 화면 계층이 낸 오류는 표준오류에 {"error": "<code>", "message": "…"}.
       백엔드(herdr)가 실패하면 그 출력·종료 코드를 그대로 흘려보낸다 — 원래 스크립트가 오류 안내에 넣던 글자가 그대로 남게
 
@@ -114,7 +116,7 @@ class HerdrBackend(Backend):
     def self_info(self):
         pane = os.environ.get('HERDR_PANE_ID', '')
         # herdr id 는 "<workspace>:<pane>" — 쪼개 읽는 건 백엔드 몫이다(monitor-pane 이 하던 그대로: ':' 가 없으면 비움)
-        return {'inside': self.inside(), 'backend': 'herdr', 'pane_id': pane, 'tab_id': os.environ.get('HERDR_TAB_ID', ''),
+        return {'inside': os.environ.get('HERDR_ENV') == '1', 'backend': 'herdr', 'pane_id': pane, 'tab_id': os.environ.get('HERDR_TAB_ID', ''),
                 'workspace_id': pane.split(':')[0] if ':' in pane else ''}
 
     def _call(self, args, timeout=None, parse=True):

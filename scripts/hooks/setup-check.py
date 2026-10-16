@@ -43,7 +43,9 @@ def main() -> None:
 
     # 새 회사 첫 실행 — 설정·팩이 없거나 레포가 0개면 첫 실행(레포 찾기부터). herdr 에서 새로 켰으면 지시가 자동으로 입력된다
     if needs_first_run(ATHENA_DIR):
-        auto = os.environ.get('HERDR_ENV') == '1' and os.environ.get('HERDR_PANE_ID') and payload.get('source') in (None, 'startup')
+        import screen  # 화면 pane 안에서 새로 켠 세션이면 workspace-up 훅이 첫 실행 지시를 대신 입력한다
+        me = screen.self_info()
+        auto = me['inside'] and me['pane_id'] and payload.get('source') in (None, 'startup')
         how = '/setup 스킬을 부른다' if TOOL == 'claude' else 'docs/setup.md 절차를 0단계부터 그대로 한다'
         print(json.dumps({
             'systemMessage': ('🌱 아직 회사 팩이 없습니다 — 화면 세팅이 끝나면 아테나가 첫 실행(레포 찾기 → 팩 → 뼈대 → 검증 → 지문)을 바로 시작합니다.' if auto
