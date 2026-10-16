@@ -104,7 +104,7 @@ PORT_ENV=(ATHENA_BOARD_PORT=47999 ATHENA_BOARD_NO_BROWSER=1)
 sc_board_new()      { step - "${IN[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
 sc_board_reuse()    { step board-reuse "${IN[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
 sc_board_nopane()   { step - HERDR_ENV=1 HERDR_TAB_ID=w1:t1 "${PORT_ENV[@]}" -- scripts/board.sh; }
-sc_board_outside()  { step - "${PORT_ENV[@]}" -- scripts/board.sh; }
+sc_board_outside()  { STEP_WAIT="#nohup" step - "${PORT_ENV[@]}" -- scripts/board.sh; }   # nohup 은 &로 뒤에서 돈다 — 기록이 다음 시나리오로 새지 않게 기다린다
 sc_board_splitfail(){ step split-fail "${IN[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
 sc_monitor_new()    { step - "${IN[@]}" -- scripts/monitor-pane.sh 30; }
 sc_monitor_reuse()  { step monitor-reuse "${IN[@]}" -- scripts/monitor-pane.sh; }
