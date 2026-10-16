@@ -8,47 +8,49 @@
 # (herdr 는 같은 탭 안 이동을 못 한다 — reason same_tab. 옮기면 pane id 가 바뀌므로 라벨로 다시 찾는다).
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-[ "${HERDR_ENV:-}" = 1 ] && command -v herdr >/dev/null 2>&1 || exit 0
+SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다(옮기기·자리 정보가 없는 백엔드면 아무것도 안 한다)
+"$SCREEN" inside && "$SCREEN" capabilities --has layout-geometry,pane-move || exit 0
+eval "$("$SCREEN" self --format sh)"   # SCREEN_PANE_ID · SCREEN_TAB_ID
 
-TAB="${1:-${HERDR_TAB_ID:-}}"
+TAB="${1:-${SCREEN_TAB_ID:-}}"
 [ -n "$TAB" ] || exit 0
-WS="${TAB%%:*}"
+WS="$("$SCREEN" tab get "$TAB" | python3 -c "import sys,json;print(json.load(sys.stdin)['tab']['workspace_id'])")"
 # athena workspace 에서만 — 이름(hermes · fe-hermes 등 사람마다 다르다)이 아니라, athena 폴더에서 열린 pane 중 에이전트 pane(🤖 …)이 아닌 게 있는지로 판단(에이전트 workspace 의 pane 도 cwd 가 hermes 일 수 있다)
-herdr pane list 2>/dev/null | python3 -c "import sys,json,os;h=os.path.realpath('$ATHENA_DIR');sys.exit(0 if any(p['workspace_id']=='$WS' and os.path.realpath(p.get('cwd') or '')==h and not (p.get('label') or '').startswith('🤖') for p in json.load(sys.stdin)['result']['panes']) else 1)" || exit 0
+"$SCREEN" pane list 2>/dev/null | python3 -c "import sys,json,os;h=os.path.realpath('$ATHENA_DIR');sys.exit(0 if any(p['workspace_id']=='$WS' and os.path.realpath(p.get('cwd') or '')==h and not (p.get('label') or '').startswith('🤖') for p in json.load(sys.stdin)['panes']) else 1)" || exit 0
 
 EXPLORER="Explorer"; GUIDE="가이드 메뉴"; MON="🛰 에이전트 모니터"; BOARD="📋 현황판"; LEARN="📚 배우기 검토"
 ROW=("$MON" "$BOARD" "$LEARN")
 
 # 이 탭의 pane 사각형: 라벨\tid\tx\ty\tw\th (라벨 없는 pane 은 "-") + AREA 줄
 snapshot() {
-  python3 - "$TAB" <<'PY'
+  python3 - "$TAB" "$SCREEN" <<'PY'
 import sys, json, subprocess
-tab = sys.argv[1]
-panes = {p['pane_id']: p for p in json.loads(subprocess.run(['herdr','pane','list'],capture_output=True,text=True).stdout)['result']['panes'] if p['tab_id'] == tab}
+tab, screen = sys.argv[1], sys.argv[2]
+panes = {p['id']: p for p in json.loads(subprocess.run([screen,'pane','list'],capture_output=True,text=True).stdout)['panes'] if p['tab_id'] == tab}
 if not panes:
     sys.exit(0)
-lay = json.loads(subprocess.run(['herdr','pane','layout','--pane',next(iter(panes))],capture_output=True,text=True).stdout)['result']['layout']
+lay = json.loads(subprocess.run([screen,'pane','layout','--pane',next(iter(panes))],capture_output=True,text=True).stdout)
 a = lay['area']; print('AREA', '-', a['x'], a['y'], a['width'], a['height'], sep='\t')
 for r in lay['panes']:
-    q = r['rect']; print(panes.get(r['pane_id'], {}).get('label') or '-', r['pane_id'], q['x'], q['y'], q['width'], q['height'], sep='\t')
+    q = r['rect']; print(panes.get(r['id'], {}).get('label') or '-', r['id'], q['x'], q['y'], q['width'], q['height'], sep='\t')
 PY
 }
 get() { awk -F'\t' -v l="$1" '$1==l{print $2; exit}' <<<"$SNAP"; }
 rect() { awk -F'\t' -v l="$1" '$1==l{print $3, $4, $5, $6; exit}' <<<"$SNAP"; }
 # 같은 workspace 어디든(이 탭 우선) 라벨로 pane id
 find_ws() {
-  herdr pane list 2>/dev/null | python3 -c "
+  "$SCREEN" pane list 2>/dev/null | python3 -c "
 import sys, json
-ps = [p for p in json.load(sys.stdin)['result']['panes'] if p['workspace_id'] == '$WS' and p.get('label') == sys.argv[1]]
+ps = [p for p in json.load(sys.stdin)['panes'] if p['workspace_id'] == '$WS' and p.get('label') == sys.argv[1]]
 ps.sort(key=lambda p: p['tab_id'] != '$TAB')
-print(ps[0]['pane_id'] if ps else '')" "$1"
+print(ps[0]['id'] if ps else '')" "$1"
 }
-in_tab() { herdr pane list 2>/dev/null | python3 -c "import sys,json;sys.exit(0 if any(p['pane_id']=='$1' and p['tab_id']=='$TAB' for p in json.load(sys.stdin)['result']['panes']) else 1)"; }
+in_tab() { "$SCREEN" pane list 2>/dev/null | python3 -c "import sys,json;sys.exit(0 if any(p['id']=='$1' and p['tab_id']=='$TAB' for p in json.load(sys.stdin)['panes']) else 1)"; }
 
 SNAP="$(snapshot)"; [ -n "$SNAP" ] || exit 0
 
 # 본 pane(하단 줄을 붙일 자리) — 부른 pane 이 아테나·에이전트 pane 이면 그것, 아니면 도구·미리보기가 아닌 가장 큰 pane
-MAIN="$(SNAP="$SNAP" python3 - "${HERDR_PANE_ID:-}" "$EXPLORER" "$GUIDE" "${ROW[@]}" <<'PY'
+MAIN="$(SNAP="$SNAP" python3 - "${SCREEN_PANE_ID:-}" "$EXPLORER" "$GUIDE" "${ROW[@]}" <<'PY'
 import os, sys
 cur, tools = sys.argv[1], set(sys.argv[2:])
 rows = [l.split('\t') for l in os.environ['SNAP'].splitlines() if not l.startswith('AREA')]
@@ -91,7 +93,7 @@ is_ok && exit 0
 # ⓪ 자리는 있는데 순서만 틀렸으면 자리끼리 바꾼다(swap — 너비·위치는 그대로라 위쪽 pane 이 여럿이어도 하단 줄 폭이 유지된다)
 swap_to() { # swap_to <라벨> <그 자리에 있는 pane id>
   local src; src="$(get "$1")"
-  [ -n "$src" ] && [ -n "$2" ] && [ "$src" != "$2" ] && herdr pane swap --source-pane "$src" --target-pane "$2" >/dev/null 2>&1
+  [ -n "$src" ] && [ -n "$2" ] && [ "$src" != "$2" ] && "$SCREEN" pane swap "$src" "$2" >/dev/null 2>&1
   SNAP="$(snapshot)"
 }
 TOOLS_RE="^($GUIDE|$MON|$BOARD|$LEARN)$"
@@ -122,11 +124,11 @@ PARK=""
 for label in "$GUIDE" "${ROW[@]}"; do
   id="$(find_ws "$label")"; [ -n "$id" ] || continue
   if [ -z "$PARK" ]; then
-    PARK="$(herdr pane move "$id" --new-tab --no-focus 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['move_result']['pane']['tab_id'])" 2>/dev/null)"
+    PARK="$("$SCREEN" pane move "$id" --new-tab --no-focus 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['pane']['tab_id'])" 2>/dev/null)"
     [ -n "$PARK" ] || { echo "⚠️  athena-layout: 임시 탭을 못 만들었습니다" >&2; exit 0; }
   else
-    anchor="$(herdr pane list 2>/dev/null | python3 -c "import sys,json;print(next((p['pane_id'] for p in json.load(sys.stdin)['result']['panes'] if p['tab_id']=='$PARK' and p.get('label')!='$EXPLORER'),''))")"
-    herdr pane move "$id" --tab "$PARK" --target-pane "$anchor" --split right --no-focus >/dev/null 2>&1
+    anchor="$("$SCREEN" pane list 2>/dev/null | python3 -c "import sys,json;print(next((p['id'] for p in json.load(sys.stdin)['panes'] if p['tab_id']=='$PARK' and p.get('label')!='$EXPLORER'),''))")"
+    "$SCREEN" pane move "$id" --tab "$PARK" --target "$anchor" --split right --no-focus >/dev/null 2>&1
   fi
 done
 sleep 0.5
@@ -140,7 +142,7 @@ put() {
   for try in 1 2 3 4 5 6; do
     id="$(find_ws "$1")"; [ -n "$id" ] || return 0
     in_tab "$id" && return 0
-    herdr pane move "$id" --tab "$TAB" --target-pane "$2" --split "$3" --ratio "$4" --no-focus >/dev/null 2>&1
+    "$SCREEN" pane move "$id" --tab "$TAB" --target "$2" --split "$3" --ratio "$4" --no-focus >/dev/null 2>&1
     sleep 0.4
   done
   echo "⚠️  athena-layout: $1 을 제자리로 못 옮겼습니다" >&2
@@ -161,8 +163,8 @@ fi
 
 # ④ 임시 탭 정리 — 도구 pane 이 다 돌아왔고 남은 게 사이드바 Explorer 뿐이면 닫는다
 if [ -n "$PARK" ]; then
-  if herdr pane list 2>/dev/null | python3 -c "import sys,json;ps=[p for p in json.load(sys.stdin)['result']['panes'] if p['tab_id']=='$PARK'];sys.exit(0 if all(p.get('label')=='$EXPLORER' for p in ps) else 1)"; then
-    herdr tab close "$PARK" >/dev/null 2>&1 || true
+  if "$SCREEN" pane list 2>/dev/null | python3 -c "import sys,json;ps=[p for p in json.load(sys.stdin)['panes'] if p['tab_id']=='$PARK'];sys.exit(0 if all(p.get('label')=='$EXPLORER' for p in ps) else 1)"; then
+    "$SCREEN" tab close "$PARK" >/dev/null 2>&1 || true
   else
     echo "⚠️  athena-layout: 임시 탭 $PARK 에 도구 pane 이 남아 있습니다" >&2
   fi
