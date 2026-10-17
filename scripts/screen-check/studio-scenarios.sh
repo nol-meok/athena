@@ -10,10 +10,10 @@ IN_STUDIO=(ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHE
 # 접속 파일(S4 — 데몬이 ~/.athena-studio/daemon.json 에 쓴다) — 살아 있는 것(pid 1 · 소켓 있음) · 소켓이 사라진 것 · pid 가 죽은 것
 mkdir -p "$WORK/studio"
 : > "$WORK/studio/daemon.sock"
-printf '{"socket": "%s", "cli": "%s", "node": "/fake/electron", "pid": 1, "protocol": 2}\n' "$WORK/studio/daemon.sock" "$BIN/athena-studio-cli" > "$WORK/studio/live.json"
-printf '{"socket": "%s", "cli": "%s", "node": "/fake/electron", "pid": 1, "protocol": 2}\n' "$WORK/studio/gone.sock" "$BIN/athena-studio-cli" > "$WORK/studio/nosocket.json"
+printf '{"socket": "%s", "cli": "%s", "node": "/fake/electron", "pid": 1, "protocol": 3}\n' "$WORK/studio/daemon.sock" "$BIN/athena-studio-cli" > "$WORK/studio/live.json"
+printf '{"socket": "%s", "cli": "%s", "node": "/fake/electron", "pid": 1, "protocol": 3}\n' "$WORK/studio/gone.sock" "$BIN/athena-studio-cli" > "$WORK/studio/nosocket.json"
 /usr/bin/true & DEAD_PID=$!; wait "$DEAD_PID"
-printf '{"socket": "%s", "cli": "%s", "node": "/fake/electron", "pid": %s, "protocol": 2}\n' "$WORK/studio/daemon.sock" "$BIN/athena-studio-cli" "$DEAD_PID" > "$WORK/studio/deadpid.json"
+printf '{"socket": "%s", "cli": "%s", "node": "/fake/electron", "pid": %s, "protocol": 3}\n' "$WORK/studio/daemon.sock" "$BIN/athena-studio-cli" "$DEAD_PID" > "$WORK/studio/deadpid.json"
 LIVE=(ATHENA_STUDIO_ENDPOINT="$WORK/studio/live.json")
 
 # 백엔드 고르기 · self · inside · capabilities · name
@@ -172,3 +172,27 @@ for line in open(sys.argv[1], encoding="utf-8"):
 SCENARIOS+=(studio_self studio_ops studio_errors studio_node studio_board studio_board_outside studio_monitor studio_learn studio_guide
   studio_layout studio_up studio_up_firstrun studio_delegate_newws studio_delegate_existing studio_delegate_here studio_delegate_outside
   studio_workspace_up studio_setup_check studio_compact studio_plan_html studio_server)
+
+# 탭 밖 고정 칸(dock — 앱 하단 에이전트 모니터, 프로토콜 3): pane list 에 tab_id·workspace_id 가 null 인 '🛰 에이전트 모니터' 가 섞인다
+# 탭·workspace 로 거르면 빠지고(pane 밖 self 의 '' 와도 맞지 않는다) · 이름표로 찾으면 잡혀 모니터를 새로 띄우지 않고 그 칸을 다시 쓴다
+sc_studio_dock() {
+  step studio-dock,studio "${IN_STUDIO[@]}" -- $S pane list --tab self --format ids
+  step studio-dock,studio "${IN_STUDIO[@]}" -- $S pane list --workspace self --format ids
+  step studio-dock,studio "${IN_STUDIO[@]}" -- $S pane list --prefer-tab self --format ids
+  step studio-dock,studio "${IN_STUDIO[@]}" -- $S pane list --agent-only --format ids
+  step studio-dock,studio "${IN_STUDIO[@]}" -- $S pane list --label "🛰 에이전트 모니터" --prefer-workspace self --format id
+  step studio-dock,studio "${LIVE[@]}" -- $S pane list --tab self --format ids
+  step studio-dock,studio "${LIVE[@]}" -- $S pane list --workspace self --format ids
+  # 고정 칸은 나눌 수 없다 — 데몬의 usage 를 그대로(fixture studio-docksplit)
+  step studio-docksplit,studio-dock,studio "${IN_STUDIO[@]}" -- $S pane split --target p20 --direction right
+  # 모니터: 고정 칸을 다시 쓴다(split 없음) · athena-up 도 모니터를 새로 띄우지 않는다
+  step studio-dock,studio "${IN_STUDIO[@]}" -- scripts/monitor-pane.sh
+  step studio-dock,studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 -- scripts/athena-up.sh
+}
+sc_studio_dock_server() {
+  local saved=("${IN[@]}")
+  IN=("${IN_STUDIO[@]}")
+  board_server studio-dock,studio p2 p20
+  IN=("${saved[@]}")
+}
+SCENARIOS+=(studio_dock studio_dock_server)
