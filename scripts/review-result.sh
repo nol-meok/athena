@@ -56,3 +56,19 @@ def record(text):
 update_plan(plan, record)
 print(line)
 PYEOF
+
+# 리뷰를 끝낸 reviewer pane 은 1분 뒤 닫는다 — 결론은 위에서 계획서에 남았다. 화면 계층으로만 다룬다(밖이면 아무것도 안 한다)
+if [ "${ATHENA_REVIEW_AUTOCLOSE:-1}" != 0 ] && "$ATHENA_DIR/scripts/screen" inside 2>/dev/null; then
+  SELF="$("$ATHENA_DIR/scripts/screen" self --format sh 2>/dev/null | sed -n 's/^SCREEN_PANE_ID=//p' | tr -d "'\"")"
+  LABEL="$("$ATHENA_DIR/scripts/screen" pane get "$SELF" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['pane'].get('label') or '')" 2>/dev/null)"
+  case "$LABEL" in
+    "🤖 reviewer"*)
+      SECS="${ATHENA_REVIEW_AUTOCLOSE_SECS:-60}"
+      nohup bash -c '
+        sleep "$1"
+        status="$("$0/scripts/screen" pane get "$2" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)[\"pane\"].get(\"agent_status\") or \"\")" 2>/dev/null)"
+        [ "$status" = idle ] && "$0/scripts/screen" pane close "$2" >/dev/null 2>&1
+      ' "$ATHENA_DIR" "$SECS" "$SELF" >/dev/null 2>&1 &
+      echo "🧹 리뷰가 끝났다 — 이 reviewer pane($SELF)은 ${SECS}초 뒤 닫는다(그때 쉬고 있으면)" ;;
+  esac
+fi
