@@ -52,5 +52,24 @@ def protected_branches(cfg, repo_name):
     return names
 
 
+def repo_entry(cfg, repo_name):
+    return next((entry for entry in cfg.get('repos', []) if entry.get('name') == repo_name), {})
+
+
+def is_direct(cfg, repo_name):
+    """main 직접 레포인가 — 팩 pack.json 의 레포에 "direct": true. 워크트리·작업 브랜치·PR 없이 메인 체크아웃의 기준 브랜치에서 바로
+    작업하고 commit.sh 로 커밋, ship.sh 가 PR 대신 origin/<prBase> 에 빨리 감기로 push 한다(docs/pack.md)."""
+    return bool(repo_entry(cfg, repo_name).get('direct'))
+
+
+def direct_branch(cfg, repo_name):
+    """main 직접 레포가 작업·push 하는 브랜치 — prBase(없으면 branch)."""
+    repo = repo_entry(cfg, repo_name)
+    return repo.get('prBase') or repo.get('branch') or 'main'
+
+
 def is_protected(cfg, repo_name, branch):
+    # main 직접 레포는 그 작업 브랜치(prBase)에 커밋·push 한다 — 그 하나만 보호에서 뺀다(나머지 보호 이름은 그대로)
+    if is_direct(cfg, repo_name) and branch == direct_branch(cfg, repo_name):
+        return False
     return branch in protected_branches(cfg, repo_name) or branch.startswith(PROTECTED_PREFIXES)

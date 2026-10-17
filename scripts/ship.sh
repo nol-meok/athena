@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 에이전트 push·PR — 사용자가 pane 에서 "PR 올려줘" 라고 했을 때만, 이 스크립트로만 한다.
 # 레포 하나짜리 작업만 받는다(여러 레포에 걸친 작업은 아테나가 순서를 정해 올린다).
+# main 직접 레포(팩 direct: true)는 PR 대신 메인 체크아웃의 작업 브랜치를 origin 에 빨리 감기로 push 한다 — 미리보기 → --yes 는 같다(제목·base·본문 없음)
 #
 # 사용 (두 번 부른다):
 #   1) 미리보기 — 아무것도 보내지 않는다
@@ -63,7 +64,9 @@ MAIN="$(git -C "$TOP" worktree list --porcelain | awk '/^worktree /{sub(/^worktr
 MAIN="$(cd "$MAIN" && pwd -P)"
 REPO="$(basename "$MAIN")"
 for link in "$ATHENA_DIR"/repos/*; do [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$MAIN" ] && REPO="$(basename "$link")"; done
-[ "$TOP" != "$MAIN" ] || fail "메인 체크아웃(repos/$REPO)이다. 워크트리에서 작업한 브랜치만 올린다"
+# main 직접 레포(팩 direct: true)는 PR 없이 메인 체크아웃의 작업 브랜치를 origin 에 빨리 감기로 push 한다(아래 "main 직접" · docs/pack.md)
+DIRECT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_direct, direct_branch; c=load(sys.argv[1]); print(direct_branch(c, sys.argv[2]) if is_direct(c, sys.argv[2]) else "")' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(main 직접 확인)"
+[ "$TOP" != "$MAIN" ] || [ -n "$DIRECT" ] || fail "메인 체크아웃(repos/$REPO)이다. 워크트리에서 작업한 브랜치만 올린다"
 BRANCH="$(git -C "$TOP" symbolic-ref --short -q HEAD)" || fail "detached HEAD 다"
 # 보호 브랜치 — 흔한 운영·개발 이름 + 팩에 적힌 이 레포의 branch·prBase·extraPrBases(scripts/lib/athena_config.py)
 PROTECTED="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_protected; print(1 if is_protected(load(sys.argv[1]), sys.argv[2], sys.argv[3]) else 0)' "$ATHENA_DIR" "$REPO" "$BRANCH")" || fail "설정을 읽지 못했다(보호 브랜치 확인)"
@@ -148,6 +151,49 @@ case "$REVIEWED" in
   pending) REVIEW_NOTE="⚠️ reviewer 를 띄웠지만 결론 기록(- Review result:)이 없다 — 이대로 올릴지 사용자에게 확인(올리면 --no-review-ok)" ;;
   *) REVIEW_NOTE="⚠️ reviewer 기록 없음 — 리뷰 없이 올릴지 사용자에게 확인(올리면 --no-review-ok)" ;;
 esac
+
+# ── main 직접 — PR 없이 origin/<작업 브랜치> 에 빨리 감기로 push 한다(팩 direct: true) ─────────────
+if [ -n "$DIRECT" ]; then
+  [ "$BRANCH" = "$DIRECT" ] || fail "main 직접 레포는 $DIRECT 에서만 올린다(지금 $BRANCH)"
+  git -C "$TOP" fetch --quiet origin 2>/dev/null || echo "⚠️ fetch 실패 — 로컬의 origin 참조로 본다" >&2
+  git -C "$TOP" merge-base --is-ancestor "origin/$DIRECT" HEAD 2>/dev/null || fail "origin/$DIRECT 에 여기 없는 커밋이 있다 — 먼저 받아서(git pull --ff-only 또는 rebase) 다시 커밋·검증한다"
+  OUTGOING="$(git -C "$TOP" log --oneline "origin/$DIRECT"..HEAD)"
+  [ -n "$OUTGOING" ] || fail "origin/$DIRECT 에 없는 커밋이 없다 — 올릴 게 없다"
+  if [ $YES = 0 ]; then
+    echo "── main 직접 push 미리보기 (아직 아무것도 보내지 않았다)"
+    echo "레포     $REPO · 🌿 $DIRECT · HEAD $HEAD_SHA — PR 없이 origin/$DIRECT 에 빨리 감기로 push"
+    echo "올라갈 커밋 (origin/$DIRECT..HEAD):"; sed 's/^/  /' <<<"$OUTGOING"
+    echo "검증     ${RECORDED:-?}"; [ -n "$VERIFY_WARN" ] && echo "         $VERIFY_WARN"
+    echo "리뷰     $REVIEW_NOTE"
+    [ "$UNTRACKED" = 0 ] || echo "미추적   ⚠️ 커밋 안 된 새 파일 ${UNTRACKED}개 — 올라가지 않는다"
+    echo "──"
+    echo "사용자에게 확인받은 뒤 --yes 로 다시 실행한다(제목·base·본문은 쓰지 않는다)"
+    exit 0
+  fi
+  [ "$REVIEWED" = ok ] || [ $REVIEW_OK = 1 ] || fail "${REVIEW_NOTE#⚠️ }"
+  LOCK="$(git -C "$TOP" rev-parse --git-dir)/hermes-commit.lock"
+  mkdir "$LOCK" 2>/dev/null || fail "커밋이 진행 중이다($LOCK) — 끝난 뒤 미리보기부터 다시"
+  trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+  [ "$(git -C "$TOP" rev-parse HEAD)" = "$HEAD_FULL" ] || fail "확인하는 동안 HEAD 가 바뀌었다 — 미리보기부터 다시"
+  [ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "확인하는 동안 커밋하지 않은 변경이 생겼다 — 미리보기부터 다시"
+  PUSHED="$(git -C "$TOP" log --pretty=%H "origin/$DIRECT".."$HEAD_FULL" | tr '\n' ' ')"
+  # 빨리 감기만 — 원격이 그사이 움직였으면 git 이 거절한다(강제 push 하지 않는다)
+  git -C "$TOP" push origin "$HEAD_FULL:refs/heads/$DIRECT" || fail "push 실패 — 원격이 그사이 움직였으면 받아서(pull --ff-only) 다시"
+  ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$DIRECT" "$PUSHED" <<'PYEOF'
+import os, sys, re
+sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
+plan, branch, pushed = sys.argv[1:4]
+shas = set(pushed.split())
+def mark(match):
+    entry = match.group(0)
+    hit = re.search(r'`([0-9a-f]{6,})`', entry)
+    return entry.replace('push 안 함', f'push → {branch}(main 직접)') if hit and any(full.startswith(hit.group(1)) for full in shas) else entry
+update_plan(plan, lambda text: re.sub(r'^- .*push 안 함.*$', mark, text, flags=re.M))
+PYEOF
+  [ $? = 0 ] || echo "⚠️ push 는 됐지만 계획서 기록에 실패했다 — Commits 줄의 'push 안 함' 을 손으로 고친다" >&2
+  echo "✅ push: $REPO · $HEAD_SHA → origin/$DIRECT (main 직접 · PR 없음)"
+  exit 0
+fi
 
 # ── 3. base 후보 · 제목 범위 ─────────────────────────────────────────────
 git -C "$TOP" fetch --quiet origin 2>/dev/null || echo "⚠️ fetch 실패 — 로컬의 origin 참조로 본다" >&2

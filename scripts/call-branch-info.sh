@@ -7,6 +7,7 @@
 #   target\t<new-branch.sh 대상 — 설정 alias(없으면 레포 이름) · 모노레포는 <별칭>:<앱> · <별칭>:packages>
 #   repo\t<레포 이름>
 #   main\t<메인 체크아웃 git status 첫 줄>\t<미커밋 개수>
+#   direct\t<작업 브랜치>\t<메인 체크아웃 경로>   main 직접 레포(팩 direct: true)일 때만 — 브랜치를 묻지 않는다
 #   candidate\t<브랜치>\t<로컬|원격|로컬·원격>\t<최근 활동>\t<체크아웃 위치 또는 ->   (0~3줄, scripts/branch-candidates.sh)
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -32,6 +33,9 @@ PYEOF
 [ -n "${REPO:-}" ] || { echo "담당 레포를 찾지 못했다: $AGENT (athena.config.json)" >&2; exit 2; }
 printf 'target\t%s\nrepo\t%s\n' "$TARGET" "$REPO"
 DIR="$ATHENA_DIR/repos/$REPO"
+# main 직접 레포(팩 direct: true) — 브랜치를 묻지 않고 메인 체크아웃에서 띄운다: direct\t<작업 브랜치>\t<메인 체크아웃 경로>
+DIRECT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_direct, direct_branch; c=load(sys.argv[1]); print(direct_branch(c, sys.argv[2]) if is_direct(c, sys.argv[2]) else "")' "$ATHENA_DIR" "$REPO")"
+[ -n "$DIRECT" ] && [ -d "$DIR" ] && printf 'direct\t%s\t%s\n' "$DIRECT" "$(cd "$DIR" && pwd -P)"
 if [ -d "$DIR" ]; then
   printf 'main\t%s\t%s\n' "$(git -C "$DIR" status --short --branch 2>/dev/null | head -1)" "$(git -C "$DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
   "$ATHENA_DIR/scripts/branch-candidates.sh" "$REPO" 3 2>/dev/null | sed 's/^/candidate\t/'

@@ -75,7 +75,8 @@ for repo in cfg['repos']:
         if not entry:
             print(f"ERR|{app} 은 {name} 의 앱이 아니다: {', '.join(apps)}"); sys.exit(0)
         print(f"{name}|{entry['prBase']}|{app}|{naming}"); sys.exit(0)
-    print(f"{name}|{repo['prBase']}|-|{naming}"); sys.exit(0)
+    # 5번째 칸 — main 직접 레포(팩 direct: true)면 1: 브랜치·워크트리를 만들지 않고 메인 체크아웃에서 바로 작업한다
+    print(f"{name}|{repo['prBase']}|-|{naming}|{1 if repo.get('direct') else 0}"); sys.exit(0)
 print(f"ERR|'{want}' 에 맞는 레포가 athena.config.json 에 없다")
 PY
 }
@@ -91,11 +92,23 @@ for target in "${TARGETS[@]}"; do
   if [[ "$line" == ERR\|* ]]; then
     echo "❌ $target — ${line#ERR|}"; skipped=$((skipped+1)); continue
   fi
-  IFS='|' read -r repo base app naming <<< "$line"
+  IFS='|' read -r repo base app naming direct <<< "$line"
   dir="$ROOT/repos/$repo"
   label="$repo"; [ "$app" != "-" ] && label="$repo ($app)"
 
   [ -d "$dir" ] || { echo "❌ $label — repos/$repo 링크 없음. scripts/setup.sh 먼저"; skipped=$((skipped+1)); continue; }
+
+  # main 직접 레포 — 브랜치·워크트리 없이 메인 체크아웃의 작업 브랜치에서 바로(docs/pack.md). 디스패치는 메인 체크아웃 경로로
+  if [ "${direct:-0}" = 1 ]; then
+    main_dir="$(cd "$dir" && pwd -P)"
+    current="$(git -C "$main_dir" symbolic-ref --short -q HEAD || echo detached)"
+    echo "✅ $label — main 직접: 브랜치·워크트리를 만들지 않는다(🌿 $current)"
+    [ "$current" = "$base" ] || echo "   ⚠️ 메인 체크아웃이 $base 가 아니다(지금 $current) — 사용자에게 확인"
+    behind="$(git -C "$main_dir" rev-list --count "HEAD..origin/$base" 2>/dev/null || echo 0)"
+    [ "$behind" = 0 ] || echo "   ⚠️ origin/$base 보다 ${behind}커밋 뒤처졌다 — 먼저 받는다(git pull --ff-only)"
+    echo "        디스패치: scripts/delegate.sh <에이전트> --cwd $main_dir --plan <계획서>"
+    created=$((created+1)); continue
+  fi
 
   # fetch 실패해도 로컬에 origin/<base> 가 있으면 진행하되 경고한다.
   # SSH 키가 없거나 오프라인일 때 작업 자체를 막을 이유는 없다. 다만 base 가

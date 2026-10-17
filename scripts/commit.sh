@@ -10,6 +10,7 @@
 #                              발행 패키지 레포(kind: packages)는 패키지명을 준다
 #   --allow-skip "이름|이름"    검증에서 건너뛰어도 되는 단계 — 사용자가 확인한 것만
 #   --allow-main-checkout      메인 체크아웃(repos/<레포>)에 커밋 — 사용자가 명시했을 때만
+#                              (main 직접 레포 — 팩 direct: true — 는 옵션 없이 메인 체크아웃의 작업 브랜치에 커밋한다)
 #   --no-verify                검증 없이 — 사용자가 명시했을 때만. 계획서 기록에 남긴다
 #
 # 확인하는 것 (하나라도 걸리면 아무것도 바꾸지 않고 멈춘다)
@@ -67,6 +68,9 @@ sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load
 print(next((repo.get('kind', 'single') for repo in load(sys.argv[1])['repos'] if repo['name'] == sys.argv[2]), 'single'))
 PYEOF
 )"
+# main 직접 레포(팩 direct: true)는 메인 체크아웃의 작업 브랜치에서 바로 커밋한다(docs/pack.md) — 기록에는 "main 직접" 으로 남긴다
+DIRECT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_direct; print(1 if is_direct(load(sys.argv[1]), sys.argv[2]) else 0)' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(main 직접 확인)"
+[ "$DIRECT" = 1 ] && [ "$TOP" = "$MAIN" ] && [ $ALLOW_MAIN = 0 ] && ALLOW_MAIN=2
 if [ "$TOP" = "$MAIN" ] && [ $ALLOW_MAIN = 0 ]; then
   fail "메인 체크아웃(repos/$REPO)이다. 워크트리에서 커밋하거나, 사용자가 명시하면 --allow-main-checkout"
 fi
@@ -178,7 +182,8 @@ ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$(date '+%Y-%m-%d %H:%M'
 import os, sys, re
 sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
 plan, stamp, repo, branch, sha, message, note, top, allow_main = sys.argv[1:10]
-line = f"- {stamp} · {repo} · 🌿 {branch} · `{sha}` — {message.splitlines()[0]} · {note}{' · 메인 체크아웃(사용자 허용)' if allow_main == '1' else ''} · push 안 함"
+main_note = {'1': ' · 메인 체크아웃(사용자 허용)', '2': ' · main 직접'}.get(allow_main, '')   # 2 = main 직접 레포(팩 direct)
+line = f"- {stamp} · {repo} · 🌿 {branch} · `{sha}` — {message.splitlines()[0]} · {note}{main_note} · push 안 함"
 def add_commit(text):
     # 끝 개행이 없으면 마지막 줄이 절 끝 매칭에서 빠진다 — 먼저 보정
     if not text.endswith('\n'):
