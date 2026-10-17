@@ -57,18 +57,30 @@ update_plan(plan, record)
 print(line)
 PYEOF
 
-# 리뷰를 끝낸 reviewer pane 은 1분 뒤 닫는다 — 결론은 위에서 계획서에 남았다. 화면 계층으로만 다룬다(밖이면 아무것도 안 한다)
+# 리뷰를 끝낸 reviewer pane 은 쉬기 시작한 뒤 1분 뒤 닫는다 — 결론은 위에서 계획서에 남았다. 화면 계층으로만 다룬다(밖이면 아무것도 안 한다)
 if [ "${ATHENA_REVIEW_AUTOCLOSE:-1}" != 0 ] && "$ATHENA_DIR/scripts/screen" inside 2>/dev/null; then
   SELF="$("$ATHENA_DIR/scripts/screen" self --format sh 2>/dev/null | sed -n 's/^SCREEN_PANE_ID=//p' | tr -d "'\"")"
   LABEL="$("$ATHENA_DIR/scripts/screen" pane get "$SELF" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['pane'].get('label') or '')" 2>/dev/null)"
   case "$LABEL" in
     "🤖 reviewer"*)
       SECS="${ATHENA_REVIEW_AUTOCLOSE_SECS:-60}"
+      # 결론을 적은 뒤에도 reviewer 는 보고를 쓰느라 한동안 일한다 — 한 번만 보면 그때 working 이라 놓친다(2026-10-17 pane 4개가 남았다).
+      # 5초마다 보고, 쉬기 시작한 뒤 SECS 초 동안 계속 쉬면 닫는다. 다시 일하면(사용자가 말을 걸었다) 처음부터 센다. 30분이 지나도 안 쉬면 그만둔다
       nohup bash -c '
-        sleep "$1"
-        status="$("$0/scripts/screen" pane get "$2" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)[\"pane\"].get(\"agent_status\") or \"\")" 2>/dev/null)"
-        [ "$status" = idle ] && "$0/scripts/screen" pane close "$2" >/dev/null 2>&1
+        idle_since=""; waited=0
+        while [ "$waited" -lt 1800 ]; do
+          status="$("$0/scripts/screen" pane get "$2" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)[\"pane\"].get(\"agent_status\") or \"\")" 2>/dev/null)"
+          [ -n "$status" ] || exit 0   # pane 이 없어졌다
+          now=$(date +%s)
+          if [ "$status" = idle ]; then
+            [ -n "$idle_since" ] || idle_since=$now
+            [ $((now - idle_since)) -ge "$1" ] && { "$0/scripts/screen" pane close "$2" >/dev/null 2>&1; exit 0; }
+          else
+            idle_since=""
+          fi
+          sleep 5; waited=$((waited + 5))
+        done
       ' "$ATHENA_DIR" "$SECS" "$SELF" >/dev/null 2>&1 &
-      echo "🧹 리뷰가 끝났다 — 이 reviewer pane($SELF)은 ${SECS}초 뒤 닫는다(그때 쉬고 있으면)" ;;
+      echo "🧹 리뷰가 끝났다 — 이 reviewer pane($SELF)은 쉬기 시작한 뒤 ${SECS}초 동안 계속 쉬면 닫는다" ;;
   esac
 fi
