@@ -80,10 +80,10 @@ import json, re, sys, pathlib
 text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'); head, branch, head_tree, repo = sys.argv[3:7]
 sys.path.insert(0, sys.argv[2] + '/scripts/lib'); from athena_config import load; cfg = load(sys.argv[2])
 agents = set()
-for repo in cfg['repos']:
-    agents.update(repo.get('agents') or [])
-    if repo.get('packagesAgent'): agents.add(repo['packagesAgent'])
-    agents.update(app['agent'] for app in (repo.get('apps') or {}).values())
+for entry in cfg['repos']:   # repo(레포 이름 인자)를 덮어쓰지 않게 — 덮이면 아래 "📦 <레포>" 리뷰 줄을 못 찾는다
+    agents.update(entry.get('agents') or [])
+    if entry.get('packagesAgent'): agents.add(entry['packagesAgent'])
+    agents.update(app['agent'] for app in (entry.get('apps') or {}).values())
 found = set()
 line = re.search(r'^- Agent:\s*(.+)$', text, re.M)
 if line: found.update(name for name in agents if re.search(rf'(?<![\w-]){re.escape(name)}(?![\w-])', line.group(1)))
