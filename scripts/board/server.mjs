@@ -29,7 +29,7 @@
  *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<워크스페이스>/memory) 목록·본문 — 읽기 전용
  *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
  *   - POST /api/hermes-new 이슈 [처리 시작] → 아테나: 새 아테나 pane(🧭 아테나 · <이슈>)을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
- *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(herdr pane send-text + Enter)
+ *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(scripts/screen pane send-text + Enter)
  *     정식 계획서 결정 콘솔(/plans/*.html)의 [이대로 진행] 도 이걸로 PLAN.leadPane 에 보낸다
  *   브라우저가 보내기 전에 지시문을 보여주고 고치게 한다
  * 다른 사이트가 localhost 로 요청을 보내 아테나에 지시를 넣지 못하게, 서버를 띄울 때마다 만드는 토큰과
@@ -52,6 +52,7 @@ import { explainProblems, guessCause } from '../qa/explain.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { githubOrg, loadConfig, prLinkPattern } from '../lib/config.mjs'
+import { screen } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = Number(process.env.ATHENA_BOARD_PORT || 4700)
@@ -413,25 +414,25 @@ const doneCheck = async (issue) => {
 
 // ── 지금 동작 중 ─────────────────────────────────────────────────────────
 const readPanes = async () => {
-  const out = await run('herdr', ['pane', 'list'])
-  if (!out) return { available: false, panes: [] }
+  // 화면 계층(scripts/screen)의 에이전트 pane 만 — 없거나 실패면 "찾지 못했어요"
+  const listed = await screen(['pane', 'list', '--agent-only'])
+  if (!listed) return { available: false, panes: [] }
   try {
-    const panes = JSON.parse(out).result.panes
-      .filter((pane) => pane.agent)
+    const panes = listed.panes
       .map((pane) => {
-        // herdr 는 pane 이름을 label 로 준다 (delegate.sh 가 붙인 '🤖 <에이전트> · <브랜치>')
-        const name = pane.label || pane.name || pane.title || ''
+        // pane 이름은 label (delegate.sh 가 붙인 '🤖 <에이전트> · <브랜치>') — 없으면 name · pane 제목
+        const name = pane.label || pane.name || pane.pane_title || ''
         const delegated = name.match(/^🤖\s*(\S+)(?:\s*·\s*(.+))?$/)
         return {
           kind: 'pane',
-          id: pane.pane_id,
+          id: pane.id,
           tool: pane.agent,
           status: pane.agent_status || 'unknown',
           // 위임 pane 은 에이전트 이름, athena 루트의 claude 는 아테나(팀리드), 그 밖은 도구 이름
           agent: delegated?.[1] || (pane.agent === 'claude' && pane.cwd === ROOT ? '아테나' : pane.agent),
           role: delegated ? 'agent' : pane.agent === 'claude' && pane.cwd === ROOT ? 'hermes' : 'other',
           branch: delegated?.[2] || '',
-          title: pane.terminal_title_stripped || '',
+          title: pane.title || '',
           cwd: pane.cwd?.replace(homedir(), '~') || '',
           focused: Boolean(pane.focused),
         }
@@ -724,7 +725,7 @@ const collect = async () => {
     issue.linkedPlan.working = plan.working
     if (plan.status === 'blocked') issue.blocked = plan.blocked || '막힘'
   }
-  return { header: readHeader(), herdr: available, agents: [...AGENT_NAMES].sort(), cards: [...issues, ...plans.filter((plan) => !merged.has(plan.id))], panes, subagents, worktrees }
+  return { header: readHeader(), screen: available, agents: [...AGENT_NAMES].sort(), cards: [...issues, ...plans.filter((plan) => !merged.has(plan.id))], panes, subagents, worktrees }
 }
 
 // ── 서버 ────────────────────────────────────────────────────────────────
@@ -860,8 +861,8 @@ const sendToPane = async (paneId, text) => {
   if (!target) return '보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)'
   const oneLine = text.replace(/\s*\n\s*/g, ' ').trim()
   if (!oneLine || oneLine.length > 2000) return '지시문이 비어 있거나 너무 길어요'
-  if ((await run('herdr', ['pane', 'send-text', target.id, oneLine])) === null) return 'herdr 로 입력을 보내지 못했어요'
-  await run('herdr', ['pane', 'send-keys', target.id, 'Enter'])
+  if ((await screen(['pane', 'send-text', target.id, oneLine])) === null) return 'herdr 로 입력을 보내지 못했어요'
+  await screen(['pane', 'send-keys', target.id, 'Enter'])
   return null
 }
 
@@ -873,16 +874,15 @@ const openHermesPane = async (issueId, text) => {
   const prompt = text.trim()
   if (!prompt || prompt.length > 4000) return { error: '지시문이 비어 있거나 너무 길어요' }
   const base = (snapshot?.panes ?? []).find((pane) => pane.role === 'hermes')
-  const splitArgs = base ? ['pane', 'split', base.id] : ['pane', 'split', '--current']
-  const out = await run('herdr', [...splitArgs, '--direction', 'right', '--ratio', '0.5', '--cwd', ROOT, '--no-focus'])
+  const out = await screen(['pane', 'split', '--target', base ? base.id : 'focused', '--direction', 'right', '--ratio', '0.5', '--cwd', ROOT, '--no-focus'])
   let pane = ''
   try {
-    pane = JSON.parse(out ?? '').result.pane.pane_id
+    pane = out.pane.id
   } catch {
-    return { error: '새 pane 을 열지 못했어요 (herdr pane split)' }
+    return { error: '새 pane 을 열지 못했어요 (herdr pane split)' } // screen-lint: 안내 문구
   }
   const title = (readIssue(issuePath)?.title ?? basename(issueId, '.md')).slice(0, 30)
-  await run('herdr', ['pane', 'rename', pane, `🧭 아테나 · ${title}`])
+  await screen(['pane', 'rename', pane, `🧭 아테나 · ${title}`])
   // 지시문은 따옴표·줄바꿈이 섞여 있어 파일로 넘긴다(delegate.sh 와 같은 방식). 끝나면 러너가 지운다
   const stamp = randomBytes(4).toString('hex')
   const promptFile = join(tmpdir(), `hermes-issue-prompt-${stamp}`)
@@ -894,7 +894,7 @@ const openHermesPane = async (issueId, text) => {
     `cd '${ROOT}' || exit 1`,
     `claude "$(cat '${promptFile}')"`,
   ].join('\n') + '\n', { mode: 0o755 })
-  if ((await run('herdr', ['pane', 'run', pane, runner])) === null) return { error: `pane ${pane} 에서 아테나를 실행하지 못했어요` }
+  if ((await screen(['pane', 'run', pane, runner])) === null) return { error: `pane ${pane} 에서 아테나를 실행하지 못했어요` }
   return { pane }
 }
 

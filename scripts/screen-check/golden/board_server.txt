@@ -1,0 +1,13 @@
+--- state
+{
+ "available": false,
+ "panes": []
+}
+--- action
+{"error":"보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)"}
+--- action(없는 pane)
+{"error":"보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)"}
+--- hermes-new
+{"error":"이슈 파일을 찾지 못했어요"}
+--- herdr (pane list 뺌)
+--- pane list 불림: 아니오

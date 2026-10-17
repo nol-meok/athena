@@ -1,0 +1,12 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 node <WORK>/node-check.mjs <ATHENA>/scripts/lib/screen.mjs
+--- exit 0
+--- stdout
+["w1:p1","w1:p2","w2:p1"]
+{}
+w1:p1
+null
+--- stderr
+--- herdr
+["pane", "list"]
+["pane", "send-text", "w1:p2", "hi"]
+["pane", "current"]

@@ -46,6 +46,7 @@ import { captureTracking, blockThirdParty, eventsSince, HIDE_EVENT_PANEL } from 
 import { createLiveLog, startScreencast } from './live.mjs'
 import { normalizeTarget, sessionFileOf, targetKey, checkServerUrl } from './targets.mjs'
 import { loadConfig } from '../lib/config.mjs'
+import { screenSync } from '../lib/screen.mjs'
 import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie, packQaWarnings, routesWarnings, codeConventions } from './apps.mjs'
 
 const QA_DIR = dirname(fileURLToPath(import.meta.url))
@@ -149,8 +150,8 @@ if (flag('flow')) {
   mkdirSync(groupDir, { recursive: true })
   let pane = ''
   try {
-    // herdr 는 JSON 을 준다 — [담당 에이전트에게 조사 맡기기] 가 이 pane(이 런을 띄운 아테나)으로 보낸다
-    pane = JSON.parse(execFileSync('herdr', ['pane', 'current'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })).result?.pane?.pane_id ?? ''
+    // 화면 계층의 지금 pane — [담당 에이전트에게 조사 맡기기] 가 이 pane(이 런을 띄운 아테나)으로 보낸다
+    pane = screenSync(['pane', 'current'], { stdio: ['ignore', 'pipe', 'ignore'] }).pane?.id ?? ''
   } catch {
     pane = ''
   }

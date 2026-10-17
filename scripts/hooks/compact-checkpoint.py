@@ -7,7 +7,7 @@
   post — 압축 직후(SessionStart, source=compact): "요약만 믿지 말고 계획서 Checkpoint 부터 다시 읽어라" 를
          계획서 경로·스냅샷과 함께 대화 맨 앞에 넣는다
 
-계획서 찾기 — 이 pane(HERDR_PANE_ID)이 적힌 계획서: Checkpoint `- Work ref: … pane <id>` · `- Review: … pane <id>`
+계획서 찾기 — 이 pane(화면 계층 self — scripts/lib/screen.py)이 적힌 계획서: Checkpoint `- Work ref: … pane <id>` · `- Review: … pane <id>`
 (delegate.sh 가 적는다) 또는 정식 계획서 html 의 `"leadPane": "<id>"`(옛 계획서는 `hermesPane`). 여럿이면 가장 최근에 고친 것. 끝난(done) 계획서는 뺀다.
 못 찾으면 pre 는 아무것도 쓰지 않고, post 는 진행 중 계획서 후보만 알린다(아테나 세션·FE pane 에서만).
 압축·세션 시작을 막거나 늦추지 않는다(항상 exit 0).
@@ -25,6 +25,7 @@ import sys
 ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 from plan_update import update_plan  # noqa: E402 — 경로를 넣은 뒤에 읽는다
+import screen  # noqa: E402
 PLANS_DIR = ATHENA_DIR / 'plans'
 SNAPSHOT_PREFIX = '- Auto snapshot:'
 MAX_LISTED_FILES = 8
@@ -124,7 +125,7 @@ def is_hermes_session(payload: dict) -> bool:
 
 
 def on_pre(payload: dict) -> None:
-    found = find_plan(os.environ.get('HERDR_PANE_ID', ''))
+    found = find_plan(screen.self_info()['pane_id'])
     if not found:
         return
     path, text = found
@@ -134,7 +135,7 @@ def on_pre(payload: dict) -> None:
 def on_post(payload: dict) -> None:
     if payload.get('source') not in (None, 'compact'):
         return
-    found = find_plan(os.environ.get('HERDR_PANE_ID', ''))
+    found = find_plan(screen.self_info()['pane_id'])
     if found:
         path, text = found
         snapshot = re.search(r'^' + re.escape(SNAPSHOT_PREFIX) + r'\s*(.*)$', text, re.M)

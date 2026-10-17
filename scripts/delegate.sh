@@ -21,9 +21,10 @@
 #   scripts/delegate.sh <에이전트명> "<프롬프트>" --down    # 오른쪽 대신 아래로 분할
 #
 # 에이전트명은 .claude/agents/<이름>.md 의 name 이다 (reviewer 등).
-# 결과는 pane 에서 보고, 아테나는 `herdr pane read <id>` 로 읽는다.
+# 결과는 pane 에서 보고, 아테나는 `scripts/screen pane read <id>` 로 읽는다.
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴더 이름(hermes 링크)으로 불려도 같은 값
+SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — workspace·탭·pane 은 이걸로만 다룬다
 
 AGENT=""; PROMPT=""; DIR="right"; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""
 while [ $# -gt 0 ]; do
@@ -145,7 +146,7 @@ WORKDIR="${WORKDIR:-$ATHENA_DIR}"
 # 상대 경로면 절대 경로로 — 실행기는 pane 의 시작 폴더(이미 그 폴더)에서 다시 cd 하므로 상대 경로는 어긋난다
 WORKDIR="$(cd "$WORKDIR" && pwd)"
 
-if [ "${HERDR_ENV:-}" != 1 ] || ! command -v herdr >/dev/null 2>&1; then
+if ! "$SCREEN" inside; then
   echo "herdr 밖입니다. 직접 실행하세요:"
   if [ -n "$PROMPT" ]; then echo "  (cd $WORKDIR && claude --agent $AGENT \"$PROMPT\")"
   else echo "  (cd $WORKDIR && claude --agent $AGENT)"; fi
@@ -160,74 +161,74 @@ PANE=""
 if [ "$HERE" = 0 ] && [ -n "$REPO_DIR" ]; then
   REPO_NAME="$(basename "$REPO_DIR")"
 
-  WS="$(herdr workspace list 2>/dev/null | python3 -c "
+  WS="$("$SCREEN" workspace list 2>/dev/null | python3 -c "
 import sys, json
-try: rows = json.load(sys.stdin)['result']['workspaces']
+try: rows = json.load(sys.stdin)['workspaces']
 except Exception: sys.exit()
 for w in rows:
-    if w.get('label') == '$REPO_NAME': print(w['workspace_id']); break
+    if w.get('label') == '$REPO_NAME': print(w['id']); break
 ")"
 
   if [ -z "$WS" ]; then
     # 새로 만들면 기본 탭이 하나 딸려 온다. 그 탭을 그대로 쓴다 (빈 탭을 남기지 않는다)
-    CREATED="$(herdr workspace create --label "$REPO_NAME" --cwd "$WORKDIR" --no-focus 2>/dev/null)"
+    CREATED="$("$SCREEN" workspace create --label "$REPO_NAME" --cwd "$WORKDIR" --no-focus 2>/dev/null)"
     WS="$(printf '%s' "$CREATED" | python3 -c "
 import sys, json
-try: print(json.load(sys.stdin)['result']['workspace']['workspace_id'])
+try: print(json.load(sys.stdin)['workspace']['id'])
 except Exception: pass
 ")"
     TAB="$(printf '%s' "$CREATED" | python3 -c "
 import sys, json
-try: print(json.load(sys.stdin)['result']['workspace']['active_tab_id'])
+try: print(json.load(sys.stdin)['workspace']['active_tab_id'])
 except Exception: pass
 ")"
     if [ -n "$TAB" ]; then
-      herdr tab rename "$TAB" "$REPO_NAME" >/dev/null 2>&1 || true
-      PANE="$(herdr pane list 2>/dev/null | python3 -c "
+      "$SCREEN" tab rename "$TAB" "$REPO_NAME" >/dev/null 2>&1 || true
+      PANE="$("$SCREEN" pane list 2>/dev/null | python3 -c "
 import sys, json
-for p in json.load(sys.stdin)['result']['panes']:
-    if p.get('tab_id') == '$TAB': print(p['pane_id']); break
+for p in json.load(sys.stdin)['panes']:
+    if p.get('tab_id') == '$TAB': print(p['id']); break
 ")"
       PLACEMENT="새 workspace '$REPO_NAME'"
     fi
   else
     # 이미 있으면 그 workspace 의 활성 탭에 pane 을 덧붙인다
-    TAB="$(herdr workspace get "$WS" 2>/dev/null | python3 -c "
+    TAB="$("$SCREEN" workspace get "$WS" 2>/dev/null | python3 -c "
 import sys, json
-try: print(json.load(sys.stdin)['result']['workspace']['active_tab_id'])
+try: print(json.load(sys.stdin)['workspace']['active_tab_id'])
 except Exception: pass
 ")"
-    BASE="$(herdr pane list 2>/dev/null | python3 -c "
+    BASE="$("$SCREEN" pane list 2>/dev/null | python3 -c "
 import sys, json
-for p in json.load(sys.stdin)['result']['panes']:
-    if p.get('tab_id') == '$TAB': print(p['pane_id']); break
+for p in json.load(sys.stdin)['panes']:
+    if p.get('tab_id') == '$TAB': print(p['id']); break
 ")"
     if [ -n "$BASE" ]; then
-      PANE="$(herdr pane split "$BASE" --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus 2>/dev/null | python3 -c "
+      PANE="$("$SCREEN" pane split --target "$BASE" --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus 2>/dev/null | python3 -c "
 import sys, json
-try: print(json.load(sys.stdin)['result']['pane']['pane_id'])
+try: print(json.load(sys.stdin)['pane']['id'])
 except Exception: pass
 ")"
-      COUNT="$(herdr pane list 2>/dev/null | python3 -c "
+      COUNT="$("$SCREEN" pane list 2>/dev/null | python3 -c "
 import sys, json
-print(sum(1 for p in json.load(sys.stdin)['result']['panes'] if p.get('tab_id') == '$TAB'))
+print(sum(1 for p in json.load(sys.stdin)['panes'] if p.get('tab_id') == '$TAB'))
 ")"
       PLACEMENT="workspace '$REPO_NAME' (pane ${COUNT}개째)"
     fi
   fi
 fi
 
-# 위에서 못 만들었으면(또는 --here) 지금 탭에서 쪼갠다
+# 위에서 못 만들었으면(또는 --here) 지금 탭에서 쪼갠다 — 포커스된 pane 옆(--target focused)
 if [ -z "$PANE" ]; then
-  OUT="$(herdr pane split --current --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus)" \
+  OUT="$("$SCREEN" pane split --target focused --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus)" \
     || { echo "pane split 실패: $OUT"; exit 1; }
-  PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])')" \
+  PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')" \
     || { echo "pane id 파싱 실패"; exit 1; }
   PLACEMENT="${PLACEMENT:-현재 탭}"
 fi
 sleep 1
 
-# `herdr pane run` 은 인자를 따옴표 없이 셸 명령줄로 이어붙인다.
+# `pane run`(화면 계층 — herdr 계약 그대로)은 인자를 따옴표 없이 셸 명령줄로 이어붙인다.
 # 프롬프트를 그대로 넘기면 공백에서 단어가 쪼개지고 ( ) ! * 가 셸에 먹혀
 # 에이전트가 엉뚱한 프롬프트를 받는다(실제로 겪음). 그래서 러너 스크립트 한 개만 넘긴다.
 PROMPT_FILE="$(mktemp -t hermes-prompt)" || { echo "mktemp 실패"; exit 1; }
@@ -296,7 +297,7 @@ PYEOF
 } > "$RUNNER"
 chmod +x "$RUNNER" || { rm -f "$PROMPT_FILE" "$RUNNER"; echo "chmod 실패"; exit 1; }
 
-if ! herdr pane run "$PANE" "$RUNNER" >/dev/null; then
+if ! "$SCREEN" pane run "$PANE" "$RUNNER" >/dev/null; then
   rm -f "$PROMPT_FILE" "$RUNNER"
   echo "pane 실행 실패 (pane $PANE)"; exit 1
 fi
@@ -310,7 +311,7 @@ BRANCH_FROM="${GIVEN_CWD:-${REPO_DIR:-$WORKDIR}}"
 BRANCH_NAME="$(git -C "$BRANCH_FROM" rev-parse --abbrev-ref HEAD 2>/dev/null)"
 PANE_TITLE="🤖 $AGENT"
 [ -n "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "HEAD" ] && PANE_TITLE="$PANE_TITLE · $BRANCH_NAME"
-herdr pane rename "$PANE" "$PANE_TITLE" >/dev/null 2>&1 || true
+"$SCREEN" pane rename "$PANE" "$PANE_TITLE" >/dev/null 2>&1 || true
 
 # 계획서 Work ref 에 어디서 누가 도는지 적는다 — 현황판이 이 pane 을 카드에 붙인다
 ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$WORKDIR" "${BRANCH_NAME:-?}" "$PANE" "$AGENT" <<'PYEOF'

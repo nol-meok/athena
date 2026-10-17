@@ -65,5 +65,25 @@ argument-hint: "<인자 예시>"
 - **스킬 목록**은 `.claude/skills/*/SKILL.md`의 frontmatter(`name`·`argument-hint`·`description`)를 그때그때 읽어 만든다. 스킬을 추가하면 메뉴에 자동으로 나온다. 번호를 고르면 `⏎`로 인자를 입력해 **아래에 새 pane을 열어 별도 아테나 세션**으로 `/<스킬>`을 실행하거나(기존 Claude Code pane은 건드리지 않는다. herdr 안에서만 동작, 아니면 프롬프트를 화면에 표시), `v`로 SKILL.md 본문을 볼 수 있다
 - **에이전트 목록**도 `.claude/agents/*.md`에서 `name`·`description`·`- 레포:`를 읽어 만들고, 그 아래에 `AGENTS.md`의 "어느 레포인지 고르기" 라우팅 기준을 붙인다
 - 문서 항목은 **마크다운 뷰어**로 열린다. `glow`가 설치돼 있으면 glow, 없으면 내장 렌더러 `scripts/mdview.py`(의존성 없음, 제목·목록·표·코드·굵게 서식). 특정 파일을 직접 보려면 `/guide <파일>`을 쓴다
-- 스크립트 단독: `scripts/guide-pane.sh [파일]`. `.md`를 주면 뷰어로, 그 외는 less로 띄운다. herdr 안이면 `herdr pane split`, tmux면 `split-window`, 둘 다 아니면 새 Ghostty 창으로 대체된다
+- 스크립트 단독: `scripts/guide-pane.sh [파일]`. `.md`를 주면 뷰어로, 그 외는 less로 띄운다. 화면 pane 안이면(herdr) `scripts/screen pane split`, tmux면 `split-window`, 둘 다 아니면 새 Ghostty 창으로 대체된다
 - 플레이북: `docs/playbook.html` "확장하기" 절(`/guide 열기`)
+
+## 화면 계층 (scripts/screen)
+아테나 스크립트·훅·지시문은 pane·탭·workspace 를 **`scripts/screen` 으로만** 다룬다. herdr 명령·`HERDR_*` 환경 변수·herdr JSON 모양을 아는 곳은 `scripts/lib/screen.py`(herdr 백엔드) 하나다 — 화면 백엔드가 바뀌어도(③ Studio) 같은 계약만 구현하면 스크립트는 그대로 돈다.
+- 입구: bash·node 는 `scripts/screen <동작>`(node 는 `scripts/lib/screen.mjs` 의 `screen()`·`screenSync()`), 파이썬 훅은 `scripts/lib/screen.py` 를 바로 불러 쓴다(`config.mjs ↔ athena_config.py` 와 같은 짝). 결과는 납작한 JSON, 실패면 종료 코드 1 이상
+- 동작(`scripts/screen --help`)
+
+  | 묶음 | 동작 |
+  |---|---|
+  | 지금 자리 | `self`(부른 pane — 환경에서, `--format sh` 는 eval 용 `SCREEN_*`) · `inside`(pane 안이면 0) · `pane current`(서버가 정한 지금 pane — self 와 다르다) · `capabilities [--has …]` |
+  | 보기 | `pane list`(`--tab`·`--workspace`·`--label`(이름표만)·`--label-or-name`·`--cwd`·`--agent-only`·`--prefer-tab`·`--prefer-workspace`, `self` 를 값으로) · `pane get` · `pane layout --pane` · `pane is-shell` · `pane read`·`pane wait-output`(herdr 읽기 옵션 그대로 — 출력 형식은 `--read-format`) · `tab list`·`tab get` · `workspace list`·`workspace get` |
+  | 바꾸기 | `pane split --target <id\|self\|focused>` · `pane run` · `pane send-text` · `pane send-keys` · `pane rename` · `pane swap` · `pane move`(id 가 바뀐다) · `pane close` · `tab rename`·`tab close` · `workspace create` |
+
+- `pane run` 은 단어를 **따옴표 없이 공백으로 이어 붙인 한 줄**을 그 pane 셸에 친다(herdr 계약 그대로). 따옴표가 필요한 명령은 실행기 파일을 만들어 그 경로 하나만 넘긴다(`delegate.sh` 방식)
+- `--target self` 는 부른 pane(모르면 포커스된 pane), `focused` 는 포커스된 pane. 뒤에서 도는 스크립트는 self 를 쓴다 — 포커스된 pane 은 사용자가 보고 있는 엉뚱한 곳일 수 있다
+- 출력 형식: `--format json`(기본) · `id`(첫 대상의 id 한 줄) · `ids`(한 줄에 하나). id 는 불투명한 문자열 — 쪼개 읽지 않는다(workspace 는 `workspace_id`·`tab get` 으로)
+- 백엔드: `ATHENA_SCREEN=herdr|studio|none`(기본 auto — herdr 표시·명령이 있으면 herdr, 아니면 none). none 이면 바꾸는 동작이 실패하고 부르는 쪽이 원래 대체 동작(nohup · 새 창 · 직접 실행 안내)을 한다. studio 는 아직 없다(unsupported)
+- 백엔드 기능(`capabilities`): `agent-status` · `process-info` · `layout-geometry` · `pane-move` · `workspaces` · `herdr-sidebar` — 고정 배치(`athena-layout.sh`)는 자리·옮기기가 있을 때만, 사이드바 단계(`athena-up.sh`)는 `herdr-sidebar` 가 있을 때만 돈다
+- herdr 플러그인 자체(사이드바 Explorer 설치·실행 파일·redeploy)는 `scripts/herdr-sidebar-*.sh` 가 herdr 를 직접 부른다 — 허용 목록
+- 지킴이: `scripts/screen-lint.sh` — `scripts`·`bin`·`.claude`·`.codex` 에서 허용 목록 밖의 herdr 명령·`HERDR_*` 를 찾으면 1. 스크립트를 고치거나 더하면 돌린다
+- 회귀 검사: `scripts/screen-check/check.sh` — 가짜 herdr 로 각 스크립트가 부르는 인자·순서·출력을 golden 과 비교한다(진짜 herdr·현황판은 건드리지 않는다). 화면 동작을 일부러 바꿨으면 그 시나리오만 `--record`

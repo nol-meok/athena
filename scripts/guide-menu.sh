@@ -23,14 +23,15 @@ section() { # section <파일> <시작 정규식> <끝 정규식>  → 시작~�
   awk -v s="$2" -v e="$3" '$0 ~ s {p=1} p && $0 ~ e && !($0 ~ s) {exit} p' "$1"
 }
 ask_claude() { # ask_claude <프롬프트>  — 기존 아테나 pane 을 건드리지 않고 **새 pane** 에 별도 Claude 세션을 띄워 실행
-  if [ "${HERDR_ENV:-}" = 1 ] && command -v herdr >/dev/null 2>&1 && command -v claude >/dev/null 2>&1; then
+  # 화면 계층(scripts/screen) — 메뉴 pane 이 아니라 포커스된 pane(사용자가 보고 있는 곳) 아래를 가른다
+  if "$ATHENA_DIR/scripts/screen" inside && command -v claude >/dev/null 2>&1; then
     local out new_pane
-    out="$(herdr pane split --current --direction down --ratio 0.5 --cwd "$ATHENA_DIR" --focus 2>&1)" || {
+    out="$("$ATHENA_DIR/scripts/screen" pane split --target focused --direction down --ratio 0.5 --cwd "$ATHENA_DIR" --focus 2>&1)" || {
       printf '%s⚠️ pane 분할 실패:%s %s\n' "$YELLOW" "$RESET" "$out"; return 1; }
-    new_pane="$(printf '%s' "$out" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])')"
+    new_pane="$(printf '%s' "$out" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
     sleep 1
-    herdr pane run "$new_pane" claude "$1" >/dev/null
-    herdr pane rename "$new_pane" "아테나 작업" >/dev/null 2>&1 || true
+    "$ATHENA_DIR/scripts/screen" pane run "$new_pane" claude "$1" >/dev/null
+    "$ATHENA_DIR/scripts/screen" pane rename "$new_pane" "아테나 작업" >/dev/null 2>&1 || true
     printf '%s✔ 새 pane(%s)에 아테나 세션을 띄워 실행했습니다:%s %s\n' "$GREEN" "$new_pane" "$RESET" "$1"
   else
     printf '%sherdr 밖이거나 claude 명령이 없습니다. 채팅에 직접 붙여넣으세요:%s\n\n  %s\n' "$YELLOW" "$RESET" "$1"

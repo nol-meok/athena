@@ -10,37 +10,30 @@ ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"
 LABEL="📚 배우기 검토"
 CMD=(node "$ATHENA_DIR/scripts/learn-review.mjs" --watch)
 
-if [ "${HERDR_ENV:-}" != 1 ] || ! command -v herdr >/dev/null 2>&1; then
+SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
+if ! "$SCREEN" inside; then
   exit 1
 fi
+eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다
 
-PANE="$(herdr pane list 2>/dev/null | python3 -c '
-import sys, json, os
-label, root = sys.argv[1], sys.argv[2]
-try:
-    panes = json.load(sys.stdin)["result"]["panes"]
-except Exception:
-    sys.exit(0)
-here = lambda path: bool(path) and os.path.realpath(path) == root
-found = [p for p in panes if p.get("label") == label and (here(p.get("cwd")) or here(p.get("foreground_cwd")))]
-print(found[0]["pane_id"] if found else "")
-' "$LABEL" "$ATHENA_DIR")"
+# 이 이름이고 cwd(또는 지금 셸의 폴더)가 이 체크아웃인 pane
+PANE="$("$SCREEN" pane list --label "$LABEL" --cwd "$ATHENA_DIR" --format id 2>/dev/null)"
 
-RUN="$(printf '%q ' "${CMD[@]}")"   # herdr pane run 은 명령을 한 줄 문자열로 받는다
+RUN="$(printf '%q ' "${CMD[@]}")"   # pane run 은 명령을 한 줄 문자열로 받는다(단어를 따옴표 없이 이어 붙인다)
 if [ -n "$PANE" ]; then
   # 이미 돌고 있으면 그대로 둔다 — 돌고 있는 프로그램에 명령줄을 쳐 넣지 않는다. 빈 셸(herdr 재시작으로 복원된 pane)일 때만 다시 띄운다
-  if "$ATHENA_DIR/scripts/lib/pane-is-shell.sh" "$PANE"; then
-    herdr pane run "$PANE" "$RUN" >/dev/null || exit 1
+  if "$SCREEN" pane is-shell "$PANE"; then
+    "$SCREEN" pane run "$PANE" "$RUN" >/dev/null || exit 1
   fi
   echo "$PANE (재사용)"
   exit 0
 fi
 
-# 부른 pane(HERDR_PANE_ID) 옆을 나눈다 — --current(포커스된 pane)는 뒤에서 돌 때 엉뚱한 곳을 가른다
-OUT="$(herdr pane split ${HERDR_PANE_ID:+--pane} ${HERDR_PANE_ID:---current} --direction down --ratio 0.3 --cwd "$ATHENA_DIR" --no-focus)" || exit 1
-PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])')" || exit 1
+# 부른 pane 옆을 나눈다(--target self) — 포커스된 pane 은 뒤에서 돌 때 엉뚱한 곳을 가른다
+OUT="$("$SCREEN" pane split --target self --direction down --ratio 0.3 --cwd "$ATHENA_DIR" --no-focus)" || exit 1
+PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')" || exit 1
 sleep 1
-herdr pane run "$PANE" "$RUN" >/dev/null
-herdr pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
-"$ATHENA_DIR/scripts/athena-layout.sh" "${HERDR_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
+"$SCREEN" pane run "$PANE" "$RUN" >/dev/null
+"$SCREEN" pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
+"$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
 echo "$PANE"

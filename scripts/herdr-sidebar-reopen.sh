@@ -34,7 +34,7 @@ print('no', p['pane_id'], p.get('foreground_cwd') or p.get('cwd') or '-') if p e
 ")"
   if [ "$has" = yes ]; then
     # 자리만 있고 빈 셸이면(herdr 재시작으로 복원된 pane — 플러그인도 이름만 보고 건너뛴다) 그 자리에서 다시 띄운다
-    if [ "$pane" != "-" ] && "$(dirname "$0")/lib/pane-is-shell.sh" "$pane"; then
+    if [ "$pane" != "-" ] && "$(dirname "$0")/screen" pane is-shell "$pane"; then
       herdr pane run "$pane" "env PATH=$(printf '%q' "$BIN_DIR"):\$PATH herdr-sidebar" >/dev/null 2>&1 && echo "✔ $tab Explorer 다시 띄움 ($pane)"
     fi
     continue
