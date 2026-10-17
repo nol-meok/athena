@@ -36,6 +36,26 @@ const git = (repoDir, args) => {
   }
 }
 
+// url 비교용 — github.com/<조직>/<레포> 꼴로 맞춘다(https·ssh·.git·끝 / 차이를 없앤다)
+const urlKey = (url) =>
+  String(url ?? '')
+    .trim()
+    .replace(/^git@([^:]+):/, '$1/')
+    .replace(/^[a-z+]+:\/\/(?:[^@/]+@)?/i, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/, '')
+    .toLowerCase()
+
+// 다이어그램 url → 팩 레포. 먼저 url 끝 이름 = 팩 레포 이름, 아니면 repos/<레포> 의 origin 주소로 찾는다
+// (팩 이름이 GitHub 이름과 다른 레포 — 예: 이름이 겹쳐 위 폴더 이름을 붙인 레포)
+const findRepo = (url) => {
+  const key = urlKey(url)
+  if (!key) return undefined
+  const byName = config.repos.find((repo) => repo.name === key.split('/').pop())
+  if (byName) return byName
+  return config.repos.find((repo) => urlKey(git(join(ROOT, 'repos', repo.name), ['remote', 'get-url', 'origin'])) === key)
+}
+
 const listJson = (dir) =>
   readdirSync(dir).flatMap((name) => {
     const full = join(dir, name)
@@ -112,8 +132,8 @@ for (const file of listJson(DIAGRAM_DIR)) {
   if (!revision || !sources.length) continue
 
   const name = relative(DIAGRAM_DIR, file)
-  const repoName = String(repository.url ?? '').split('/').pop()
-  const repoConfig = config.repos.find((repo) => repo.name === repoName)
+  const repoConfig = findRepo(repository.url)
+  const repoName = repoConfig?.name ?? urlKey(repository.url).split('/').pop()
   const repoDir = join(ROOT, 'repos', repoName)
   if (!repoConfig || !existsSync(repoDir)) {
     results.push({ name, verdict: '⚠️ 레포 없음', issues: [`${repoName} 를 config·repos/ 에서 찾지 못했다`] })
