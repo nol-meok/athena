@@ -167,11 +167,13 @@ sc_plan_html() {
 }
 # 현황판 서버 — 띄우고 API 로 지금 동작 중(pane 목록) · [직접 지시](send-text + Enter) · 이슈 [처리 시작 → 아테나](새 pane) 를 부른다.
 # 3초마다 도는 pane list 는 횟수가 들쭉날쭉하니 빼고, 한 번이라도 불렸는지만 적는다
-sc_board_server() {
-  local port=47998 url token code
+sc_board_server() { board_server base; }
+board_server() { # board_server <fixture,…>
+  local port=47998 url token code fx="" name
+  for name in ${1//,/ } base; do fx="$fx:$HERE/fixtures/$name"; done
   url="http://localhost:$port"
   : > "$LOG"
-  (cd "$COPY" && "${ENV0[@]}" FAKE_HERDR_FIXTURE="$HERE/fixtures/base" "${IN[@]}" ATHENA_BOARD_PORT=$port node scripts/board/server.mjs >"$WORK/server.out" 2>&1) &
+  (cd "$COPY" && "${ENV0[@]}" FAKE_HERDR_FIXTURE="${fx#:}" "${IN[@]}" ATHENA_BOARD_PORT=$port node scripts/board/server.mjs >"$WORK/server.out" 2>&1) &
   local server=$!
   for _ in $(seq 1 100); do /usr/bin/curl -s -o /dev/null --max-time 1 "$url/api/state" && break; /bin/sleep 0.1; done
   token="$(/usr/bin/curl -s "$url/" | python3 -c "import sys,re;print(re.search(r\"const TOKEN = '([0-9a-f]+)'\", sys.stdin.read()).group(1))")"
@@ -190,10 +192,24 @@ sc_board_server() {
   } >> "$RESULT"
 }
 
+# 이름표(label) 없이 title·name 만 도구 이름인 pane(fixtures/titled) — 도구 pane 으로 치지 않는다(원래 스크립트는 label 만, board.sh 는 label·name 을 봤다)
+sc_titled_board()   { step titled "${IN[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
+sc_titled_monitor() { step titled "${IN[@]}" -- scripts/monitor-pane.sh; }
+sc_titled_learn()   { step titled "${IN[@]}" -- scripts/learn-review-pane.sh; }
+sc_titled_guide()   { step titled "${IN[@]}" -- scripts/guide-pane.sh; }
+sc_titled_layout()  { step titled HERDR_ENV=1 HERDR_PANE_ID=w1:pG HERDR_TAB_ID=w1:t1 -- scripts/athena-layout.sh; }
+sc_titled_workspace_up() {
+  printf '#!/usr/bin/env bash\nfake-log athena-up "FIRST_RUN=${ATHENA_FIRST_RUN:-}"\n' > "$COPY/scripts/athena-up.sh"
+  printf '{"cwd": "%s", "source": "resume"}' "$COPY" > "$WORK/payload.json"
+  STEP_STDIN="$WORK/payload.json" STEP_WAIT='#athena-up' step titled HERDR_ENV=1 HERDR_PANE_ID=w1:pG HERDR_TAB_ID=w1:t1 -- python3 scripts/hooks/workspace-up.py
+}
+sc_titled_server()  { board_server titled; }
+
 SCENARIOS=(board_new board_reuse board_nopane board_outside board_splitfail monitor_new monitor_reuse monitor_otherws monitor_outside
   learn_new learn_busy learn_shell learn_outside guide_new guide_file guide_nopane guide_busy guide_shell guide_menu new_branch
   delegate_newws delegate_existing delegate_here delegate_outside layout_ok layout_swap layout_arg layout_other layout_base
-  up_normal up_redeploy up_firstrun up_outside workspace_up setup_check compact plan_html board_server)
+  up_normal up_redeploy up_firstrun up_outside workspace_up setup_check compact plan_html board_server
+  titled_board titled_monitor titled_learn titled_guide titled_layout titled_workspace_up titled_server)
 # 화면 계층 자체(scripts/screen) 검사 — 있으면 같이 돈다
 [ -f "$HERE/cli-scenarios.sh" ] && . "$HERE/cli-scenarios.sh"
 

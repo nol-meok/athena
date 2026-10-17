@@ -76,7 +76,7 @@ argument-hint: "<인자 예시>"
   | 묶음 | 동작 |
   |---|---|
   | 지금 자리 | `self`(부른 pane — 환경에서, `--format sh` 는 eval 용 `SCREEN_*`) · `inside`(pane 안이면 0) · `pane current`(서버가 정한 지금 pane — self 와 다르다) · `capabilities [--has …]` |
-  | 보기 | `pane list`(`--tab`·`--workspace`·`--label`·`--cwd`·`--agent-only`·`--prefer-tab`·`--prefer-workspace`, `self` 를 값으로) · `pane get` · `pane layout --pane` · `pane is-shell` · `pane read` · `pane wait-output` · `tab list`·`tab get` · `workspace list`·`workspace get` |
+  | 보기 | `pane list`(`--tab`·`--workspace`·`--label`(이름표만)·`--label-or-name`·`--cwd`·`--agent-only`·`--prefer-tab`·`--prefer-workspace`, `self` 를 값으로) · `pane get` · `pane layout --pane` · `pane is-shell` · `pane read`·`pane wait-output`(herdr 읽기 옵션 그대로 — 출력 형식은 `--read-format`) · `tab list`·`tab get` · `workspace list`·`workspace get` |
   | 바꾸기 | `pane split --target <id\|self\|focused>` · `pane run` · `pane send-text` · `pane send-keys` · `pane rename` · `pane swap` · `pane move`(id 가 바뀐다) · `pane close` · `tab rename`·`tab close` · `workspace create` |
 
 - `pane run` 은 단어를 **따옴표 없이 공백으로 이어 붙인 한 줄**을 그 pane 셸에 친다(herdr 계약 그대로). 따옴표가 필요한 명령은 실행기 파일을 만들어 그 경로 하나만 넘긴다(`delegate.sh` 방식)

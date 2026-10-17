@@ -40,7 +40,7 @@ else
   if "$SCREEN" inside; then
     eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다
     # 같은 이름의 pane 이 있으면(어느 workspace 든) 거기서 다시 띄운다
-    PANE="$("$SCREEN" pane list --label "$LABEL" --format id 2>/dev/null)"
+    PANE="$("$SCREEN" pane list --label-or-name "$LABEL" --format id 2>/dev/null)"
     if [ -z "$PANE" ]; then
       # 부른 pane 옆을 나눈다(--target self) — 포커스된 pane 은 뒤에서 돌 때 엉뚱한 곳을 가른다
       OUT="$("$SCREEN" pane split --target self --direction down --ratio 0.25 --cwd "$ATHENA_DIR" --no-focus)" || {

@@ -1,7 +1,7 @@
 $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane current
 --- exit 0
 --- stdout
-{"pane": {"id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1", "label": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "claude"}}
+{"pane": {"id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "claude"}}
 --- stderr
 --- herdr
 ["pane", "current"]
@@ -15,7 +15,7 @@ w1:p1
 $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane get w1:p1
 --- exit 0
 --- stdout
-{"pane": {"id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1", "label": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "claude"}}
+{"pane": {"id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "claude"}}
 --- stderr
 --- herdr
 ["pane", "get", "w1:p1"]
@@ -82,14 +82,14 @@ $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane swap w1
 $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane move w1:p5 --new-tab --no-focus
 --- exit 0
 --- stdout
-{"pane": {"id": "w1:pM", "tab_id": "w1:t9", "workspace_id": "w1", "label": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
+{"pane": {"id": "w1:pM", "tab_id": "w1:t9", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
 --- stderr
 --- herdr
 ["pane", "move", "w1:p5", "--new-tab", "--no-focus"]
 $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane move w1:p5 --tab w1:t9 --target  --split right --no-focus
 --- exit 0
 --- stdout
-{"pane": {"id": "w1:pM", "tab_id": "w1:t9", "workspace_id": "w1", "label": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
+{"pane": {"id": "w1:pM", "tab_id": "w1:t9", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
 --- stderr
 --- herdr
 ["pane", "move", "w1:p5", "--tab", "w1:t9", "--target-pane", "", "--split", "right", "--no-focus"]

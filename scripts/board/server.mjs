@@ -420,8 +420,8 @@ const readPanes = async () => {
   try {
     const panes = listed.panes
       .map((pane) => {
-        // pane 이름은 label (delegate.sh 가 붙인 '🤖 <에이전트> · <브랜치>')
-        const name = pane.label || ''
+        // pane 이름은 label (delegate.sh 가 붙인 '🤖 <에이전트> · <브랜치>') — 없으면 name · pane 제목
+        const name = pane.label || pane.name || pane.pane_title || ''
         const delegated = name.match(/^🤖\s*(\S+)(?:\s*·\s*(.+))?$/)
         return {
           kind: 'pane',

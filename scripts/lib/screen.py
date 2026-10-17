@@ -11,7 +11,9 @@
   studio 는 아직 없다 — 모든 동작이 unsupported 로 실패한다(③ 에서 채운다).
 
 납작한 JSON(백엔드 모양을 감춘다 — id 는 불투명한 문자열, 부르는 쪽이 id 를 쪼개 읽지 않는다):
-  Pane      {id, tab_id, workspace_id, label, cwd, foreground_cwd, focused, agent, agent_status, title}
+  Pane      {id, tab_id, workspace_id, label, name, pane_title, cwd, foreground_cwd, focused, agent, agent_status, title}
+            label 은 백엔드가 준 이름표 그대로(없으면 null) — name·pane_title 로 채우지 않는다(도구 pane 찾기가 이름표만 본다).
+            title 은 터미널 제목, pane_title 은 백엔드의 pane 제목 필드(herdr title)
   Tab       {id, workspace_id, label}
   Workspace {id, label, active_tab_id, focused}
   Layout    {area:{x,y,width,height}, panes:[{id, rect:{x,y,width,height}}]}
@@ -31,6 +33,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+
+FORWARD_STDERR = False   # CLI(main)만 켠다 — 성공해도 herdr 의 경고를 표준오류로(원래 bash 에서처럼). 파이썬 훅은 원래도 받아 버렸다
 
 FEATURES_HERDR = ['agent-status', 'process-info', 'layout-geometry', 'pane-move', 'workspaces', 'herdr-sidebar']
 
@@ -90,10 +94,10 @@ class StudioBackend(Backend):
 
 
 def _pane(raw):
-    # label ← label || name || title — 현황판·board.sh 가 name 까지 보던 것(herdr 0.9 는 label 만 준다)
+    # label·name·pane_title 은 따로 둔다 — 합치면 이름표 없는 pane 이 제목만으로 도구 pane 처럼 잡힌다(보여 줄 이름은 부르는 쪽이 고른다)
     return {
         'id': raw.get('pane_id'), 'tab_id': raw.get('tab_id'), 'workspace_id': raw.get('workspace_id'),
-        'label': raw.get('label') or raw.get('name') or raw.get('title') or None,
+        'label': raw.get('label') or None, 'name': raw.get('name') or None, 'pane_title': raw.get('title') or None,
         'cwd': raw.get('cwd'), 'foreground_cwd': raw.get('foreground_cwd'), 'focused': bool(raw.get('focused')),
         'agent': raw.get('agent') or None, 'agent_status': raw.get('agent_status') or None,
         'title': raw.get('terminal_title_stripped') or None,
@@ -124,6 +128,8 @@ class HerdrBackend(Backend):
             done = subprocess.run(['herdr', *args], capture_output=True, text=True, timeout=timeout)
         except FileNotFoundError:
             raise ScreenError('unavailable', 'herdr 명령을 찾지 못했다')
+        if FORWARD_STDERR and done.returncode == 0 and done.stderr:
+            sys.stderr.write(done.stderr)
         if done.returncode != 0:
             raise ScreenError('backend', f'herdr {" ".join(args[:2])} 실패', done.stdout, done.stderr, done.returncode)
         if not parse:
@@ -282,11 +288,11 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
   inside                                       화면 pane 안이면 0
   capabilities [--has <기능>[,<기능>…]]          백엔드 기능 목록 · --has 는 다 있으면 0
   pane current                                 서버가 정한 지금 pane(self 와 다르다 — 환경이 없으면 포커스된 pane)
-  pane list [--tab T] [--workspace W] [--label L] [--cwd D] [--agent-only] [--prefer-tab T] [--prefer-workspace W]
+  pane list [--tab T] [--workspace W] [--label L] [--label-or-name L] [--cwd D] [--agent-only] [--prefer-tab T] [--prefer-workspace W]
                                                (T·W 에 self 를 쓰면 부른 pane 의 탭·workspace) · --cwd 는 cwd 나 foreground_cwd 의 실제 경로가 D 인 것
   pane get <pane> · pane layout --pane <pane> · pane is-shell <pane>(빈 셸이면 0)
-  pane read <pane> [--lines N] [--source S]    출력 그대로(글자)
-  pane wait-output <pane> (--match T | --regex R) [--timeout MS] [--lines N] [--source S]
+  pane read <pane> [--lines N] [--source S] [--read-format text|ansi] [--ansi] [--raw]   출력 그대로(글자 · --read-format 은 herdr --format)
+  pane wait-output <pane> (--match T | --regex R) [--timeout MS] [--lines N] [--source S] [--raw]
   pane split --target <id|self|focused> --direction right|down [--ratio R] [--cwd D] [--env K=V]… [--focus|--no-focus]
   pane run <pane> <단어>…                      단어를 공백으로 이어 붙인 한 줄을 그 pane 셸에 친다(따옴표 없음 — herdr 계약 그대로)
   pane send-text <pane> <글> · pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
@@ -296,9 +302,9 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
   공통: --format json(기본) | id(첫 대상의 id 한 줄) | ids(한 줄에 하나)
   백엔드: ATHENA_SCREEN=herdr|studio|none (기본 auto)"""
 
-VALUE_FLAGS = {'--format', '--has', '--tab', '--workspace', '--label', '--cwd', '--prefer-tab', '--prefer-workspace', '--pane',
+VALUE_FLAGS = {'--format', '--has', '--tab', '--workspace', '--label', '--label-or-name', '--read-format', '--cwd', '--prefer-tab', '--prefer-workspace', '--pane',
                '--target', '--direction', '--ratio', '--env', '--split', '--lines', '--source', '--match', '--regex', '--timeout'}
-BOOL_FLAGS = {'--agent-only', '--focus', '--no-focus', '--new-tab'}
+BOOL_FLAGS = {'--agent-only', '--focus', '--no-focus', '--new-tab', '--ansi', '--raw'}
 
 
 def _parse(args):
@@ -348,6 +354,8 @@ def _filter_panes(screen, panes, flags):
         panes = [p for p in panes if p['workspace_id'] == resolve(flags['--workspace'], 'workspace_id')]
     if '--label' in flags:
         panes = [p for p in panes if p['label'] == flags['--label']]
+    if '--label-or-name' in flags:   # board.sh 가 원래 보던 대로 — 이름표 또는 name
+        panes = [p for p in panes if flags['--label-or-name'] in (p['label'], p['name'])]
     if '--cwd' in flags:
         root = _realpath(flags['--cwd'])
         panes = [p for p in panes if (p['cwd'] and _realpath(p['cwd']) == root) or (p['foreground_cwd'] and _realpath(p['foreground_cwd']) == root)]
@@ -392,7 +400,11 @@ def _dispatch(screen, words, flags, positional, raw_rest):
             return None, 1   # 확인 못 하면 1 — 돌고 있는 것을 건드리지 않는 쪽으로
     if op in ('pane read', 'pane wait-output'):
         pane = _need(positional, 1, 'pane')[0]
+        # herdr 의 읽기 옵션을 그대로 넘긴다 — --format 은 출력 형식(json·id)과 겹쳐 --read-format 으로 받는다
         options = [item for key in ('--source', '--lines', '--match', '--regex', '--timeout') if key in flags for item in (key, flags[key])]
+        if '--read-format' in flags:
+            options += ['--format', flags['--read-format']]
+        options += [key for key in ('--ansi', '--raw') if flags.get(key)]
         text = (screen.read if op == 'pane read' else screen.wait_output)(pane, options)
         return {'text': text}, 0
     if op == 'pane split':
@@ -472,6 +484,8 @@ def _print(result, fmt):
 
 
 def main(argv):
+    global FORWARD_STDERR
+    FORWARD_STDERR = True
     if not argv or argv[0] in ('-h', '--help', 'help'):
         print(USAGE)
         return 0 if argv else 2

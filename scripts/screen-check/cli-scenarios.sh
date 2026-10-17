@@ -81,4 +81,18 @@ console.log(JSON.stringify(await screen(['pane', 'list'])))
 JS
   step - "${IN[@]}" -- node "$WORK/node-check.mjs" "$COPY/scripts/lib/screen.mjs"
 }
-SCENARIOS+=(cli_self cli_split cli_list cli_ops cli_node)
+# 이름표·name·pane 제목은 따로 — --label 은 이름표만, --label-or-name 은 이름표 또는 name(board.sh)
+sc_cli_titled() {
+  step titled "${IN[@]}" -- $S pane list --label "📋 현황판" --format ids
+  step titled "${IN[@]}" -- $S pane list --label-or-name "📋 현황판" --format ids
+  step titled "${IN[@]}" -- $S pane list --label-or-name "🛰 에이전트 모니터" --format ids
+  step titled "${IN[@]}" -- bash -c "$S pane list | python3 -c 'import sys,json;[print(json.dumps(p,ensure_ascii=False)) for p in json.load(sys.stdin)[\"panes\"] if p[\"id\"] in (\"w1:pT\",\"w1:pB\")]'"
+}
+# herdr 가 성공하면서 낸 경고는 CLI 표준오류로(원래 bash 에서처럼) · 파이썬 훅(모듈)은 원래처럼 받아 버린다 · 읽기 옵션은 그대로 넘긴다
+sc_cli_passthrough() {
+  step warn "${IN[@]}" -- $S pane list --format id
+  step warn "${IN[@]}" -- python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); import screen; print(len(screen.list_panes()))'
+  step - "${IN[@]}" -- $S pane read w1:p2 --source visible --lines 5 --read-format ansi --ansi --raw
+  step - "${IN[@]}" -- $S pane wait-output w1:p2 --regex 'done$' --raw --timeout 500
+}
+SCENARIOS+=(cli_self cli_split cli_list cli_ops cli_node cli_titled cli_passthrough)

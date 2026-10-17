@@ -3,7 +3,7 @@
 
 받은 인자를 한 줄 JSON 으로 $FAKE_HERDR_LOG 에 적고, 응답은 고정 파일(fixture)에서 준다.
   FAKE_HERDR_FIXTURE  fixture 폴더 목록(':' 로 구분 · 앞이 우선). 파일 이름은 하위 명령 두 단어 — pane list → pane_list.json
-                      <이름>.exit 가 있으면 그 종료 코드로 끝낸다. 파일이 없으면 {"result":{"type":"ok"}} · 0
+                      <이름>.exit 가 있으면 그 종료 코드로, <이름>.stderr 가 있으면 그 글을 표준오류로. 파일이 없으면 {"result":{"type":"ok"}} · 0
   FAKE_ATHENA         응답 안의 @ATHENA@ 를 이 경로로 바꾼다(작업 트리 사본)
 """
 import json
@@ -20,9 +20,12 @@ words = [arg for arg in args if not arg.startswith('-')][:2]
 key = '_'.join(words) or 'none'
 body, code = None, 0
 for folder in filter(None, os.environ.get('FAKE_HERDR_FIXTURE', '').split(':')):
-    path, exit_path = os.path.join(folder, key + '.json'), os.path.join(folder, key + '.exit')
-    if not (os.path.isfile(path) or os.path.isfile(exit_path)):
+    path, exit_path, err_path = (os.path.join(folder, key + ext) for ext in ('.json', '.exit', '.stderr'))
+    if not any(os.path.isfile(item) for item in (path, exit_path, err_path)):
         continue
+    if os.path.isfile(err_path):
+        with open(err_path, encoding='utf-8') as fixture:
+            sys.stderr.write(fixture.read())
     if os.path.isfile(path):
         with open(path, encoding='utf-8') as fixture:
             body = fixture.read()
