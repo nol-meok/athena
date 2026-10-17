@@ -52,7 +52,7 @@ import { explainProblems, guessCause } from '../qa/explain.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { githubOrg, loadConfig, prLinkPattern } from '../lib/config.mjs'
-import { screen } from '../lib/screen.mjs'
+import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = Number(process.env.ATHENA_BOARD_PORT || 4700)
@@ -861,7 +861,7 @@ const sendToPane = async (paneId, text) => {
   if (!target) return '보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)'
   const oneLine = text.replace(/\s*\n\s*/g, ' ').trim()
   if (!oneLine || oneLine.length > 2000) return '지시문이 비어 있거나 너무 길어요'
-  if ((await screen(['pane', 'send-text', target.id, oneLine])) === null) return 'herdr 로 입력을 보내지 못했어요'
+  if ((await screen(['pane', 'send-text', target.id, oneLine])) === null) return `${screenName()} 로 입력을 보내지 못했어요`
   await screen(['pane', 'send-keys', target.id, 'Enter'])
   return null
 }
@@ -879,7 +879,7 @@ const openHermesPane = async (issueId, text) => {
   try {
     pane = out.pane.id
   } catch {
-    return { error: '새 pane 을 열지 못했어요 (herdr pane split)' } // screen-lint: 안내 문구
+    return { error: `새 pane 을 열지 못했어요 (${screenName()} pane split)` }
   }
   const title = (readIssue(issuePath)?.title ?? basename(issueId, '.md')).slice(0, 30)
   await screen(['pane', 'rename', pane, `🧭 아테나 · ${title}`])
@@ -970,7 +970,7 @@ const dispatchAgent = async (issueId, agent, text, job) => {
   step('plan', 'done', plan)
   step('pane', 'running', `${worktree.repo} workspace`)
   const out = await run(join(ROOT, 'scripts/delegate.sh'), [agent, header + prompt, '--cwd', worktree.path, '--plan', plan], { cwd: ROOT, timeout: 30_000 })
-  if (out === null) return fail('pane', '에이전트를 띄우지 못했어요 — herdr 안에서 현황판을 띄웠는지 확인해 주세요')
+  if (out === null) return fail('pane', `에이전트를 띄우지 못했어요 — ${screenName()} 안에서 현황판을 띄웠는지 확인해 주세요`)
   const pane = out.trim().split('\n').pop()
   step('pane', 'done', pane.split(' ')[0])
   // 맡겼으면 카드도 진행 중으로 — open·planned 일 때만 (이미 더 간 상태는 건드리지 않는다)
@@ -986,7 +986,7 @@ const dispatchReview = async (planId, text) => {
   const prompt = text.trim()
   if (!prompt || prompt.length > 4000) return { error: '지시문이 비어 있거나 너무 길어요' }
   const out = await run(join(ROOT, 'scripts/delegate.sh'), ['reviewer', prompt, '--plan', planId], { cwd: ROOT, timeout: 30_000 })
-  if (out === null) return { error: 'reviewer 를 띄우지 못했어요 — herdr 안에서 현황판을 띄웠는지 확인해 주세요' }
+  if (out === null) return { error: `reviewer 를 띄우지 못했어요 — ${screenName()} 안에서 현황판을 띄웠는지 확인해 주세요` }
   return { pane: out.trim().split('\n').pop() }
 }
 

@@ -16,7 +16,7 @@ CMD=("$ATHENA_DIR/scripts/agent-monitor.py" --stay --recent)
 
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
 if ! "$SCREEN" inside; then
-  echo "herdr 밖입니다. 직접 실행하세요:  ${CMD[*]}" >&2
+  echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:  ${CMD[*]}" >&2
   exit 1
 fi
 eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다
@@ -34,7 +34,7 @@ fi
 
 # 부른 pane 옆을 나눈다(--target self) — 포커스된 pane 은 뒤에서 돌 때 엉뚱한 곳을 가른다
 OUT="$("$SCREEN" pane split --target self --direction right --ratio 0.5 --cwd "$ATHENA_DIR" --no-focus)" || {
-  echo "⚠️  herdr pane split 실패: $OUT" >&2; exit 1; }   # screen-lint: 안내 문구
+  echo "⚠️  $("$SCREEN" name) pane split 실패: $OUT" >&2; exit 1; }
 PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
 sleep 1
 # pane run 은 단어를 따옴표 없이 이어 붙여 한 줄로 친다 — bash -c "<한 줄>" 로 넘기면 bash 가 첫 단어(스크립트)만 돌리고

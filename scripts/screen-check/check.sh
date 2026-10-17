@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 화면 계층 회귀 검사 — 각 스크립트가 herdr 를 "어떤 인자로 · 어떤 순서로" 부르는지 가짜 herdr 로 기록해 golden 과 비교한다.
+# studio 백엔드도 같은 방식 — 가짜 athena-studio-cli(데몬 CLI)가 같은 로그에 ["@studio", …] 로 적는다(시나리오 studio_* · studio-scenarios.sh).
 # herdr 호출을 scripts/screen 뒤로 옮겨도 화면에 하는 일이 그대로인지(같은 인자 · 같은 출력 · 같은 종료 코드) 보는 용도다.
 #
 # 사용: scripts/screen-check/check.sh                → golden 과 다르면 diff 를 보여 주고 1
@@ -8,7 +9,8 @@
 #
 # 진짜 herdr·현황판·브라우저는 건드리지 않는다:
 #   - 작업 트리를 임시 폴더에 복사해 그 안에서 돌린다(계획서·이슈는 fixture 로 새로 만든다)
-#   - PATH 맨 앞에 fake-bin(가짜 herdr · sleep · curl · open · nohup · gh · claude)을 두고, 환경은 env -i 로 비운 뒤 HERDR_* 를 직접 넣는다
+#   - PATH 맨 앞에 fake-bin(가짜 herdr · athena-studio-cli · sleep · curl · open · nohup · gh · claude)을 두고, 환경은 env -i 로 비운 뒤 HERDR_*·ATHENA_STUDIO_* 를 직접 넣는다
+#   - 진짜 Studio 데몬 접속 파일(~/.athena-studio/daemon.json)은 보지 않는다 — ATHENA_STUDIO_ENDPOINT 를 없는 파일로(있으면 pane 밖 시나리오가 studio 로 간다)
 #   - herdr-sidebar-{patch,reopen}.sh 는 사본에서 기록만 하는 가짜로 바꾼다(플러그인 설치·실행 파일 복사를 하지 않게)
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd -P)"
@@ -37,7 +39,7 @@ for tool in node python3 git; do
   case ":$SYS_PATH:" in *":$dir:"*) ;; *) SYS_PATH="$SYS_PATH:$dir" ;; esac
 done
 ENV0=(env -i HOME="$HOME" PATH="$BIN:$SYS_PATH" TMPDIR="$WORK/tmp/" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 TERM=dumb
-      FAKE_HERDR_LOG="$LOG" FAKE_ATHENA="$COPY")
+      FAKE_HERDR_LOG="$LOG" FAKE_ATHENA="$COPY" ATHENA_STUDIO_ENDPOINT="$WORK/no-studio/daemon.json")
 IN=(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1)   # herdr pane w1:p1(아테나) 안에서 부른 것처럼
 
 # ── 작업 트리 사본(fixture 포함) ─────────────────────────────────────────
@@ -168,27 +170,32 @@ sc_plan_html() {
 # 현황판 서버 — 띄우고 API 로 지금 동작 중(pane 목록) · [직접 지시](send-text + Enter) · 이슈 [처리 시작 → 아테나](새 pane) 를 부른다.
 # 3초마다 도는 pane list 는 횟수가 들쭉날쭉하니 빼고, 한 번이라도 불렸는지만 적는다
 sc_board_server() { board_server base; }
-board_server() { # board_server <fixture,…>
-  local port=47998 url token code fx="" name
+board_server() { # board_server <fixture,…> [<직접 지시할 에이전트 pane> <없는 pane>]  — pane id 는 백엔드마다 모양이 다르다
+  local port=47998 url token code fx="" name agent_pane="${2:-w1:p2}" missing_pane="${3:-w2:p1}"
   for name in ${1//,/ } base; do fx="$fx:$HERE/fixtures/$name"; done
   url="http://localhost:$port"
   : > "$LOG"
+  # 포트를 이미 누가 쓰면(앞선 검사가 남긴 서버 등) 그 서버의 답을 기록하게 된다 — 기록하지 않고 실패로 알린다
+  if /usr/bin/curl -s -o /dev/null --max-time 1 "$url/api/state"; then
+    echo "--- 포트 $port 를 이미 쓰는 서버가 있다 — 끄고 다시 돌린다(lsof -tiTCP:$port -sTCP:LISTEN)" >> "$RESULT"; return
+  fi
   (cd "$COPY" && "${ENV0[@]}" FAKE_HERDR_FIXTURE="${fx#:}" "${IN[@]}" ATHENA_BOARD_PORT=$port node scripts/board/server.mjs >"$WORK/server.out" 2>&1) &
   local server=$!
-  for _ in $(seq 1 100); do /usr/bin/curl -s -o /dev/null --max-time 1 "$url/api/state" && break; /bin/sleep 0.1; done
+  # 첫 수집(pane 목록)이 끝날 때까지 — 그 전에는 /api/state 가 빈 상태로 답한다
+  for _ in $(seq 1 100); do /usr/bin/curl -s --max-time 1 "$url/api/state" 2>/dev/null | grep -q '"panes"' && break; /bin/sleep 0.1; done
   token="$(/usr/bin/curl -s "$url/" | python3 -c "import sys,re;print(re.search(r\"const TOKEN = '([0-9a-f]+)'\", sys.stdin.read()).group(1))")"
   post() { /usr/bin/curl -s -X POST "$url$1" -H "Origin: $url" -H "x-board-token: $token" -H 'Content-Type: application/json' --data "$2"; echo; }
   {
     echo "--- state"
     /usr/bin/curl -s "$url/api/state" | python3 -c "import sys,json;s=json.load(sys.stdin);print(json.dumps({'available': s.get('herdr', s.get('screen')), 'panes': s['panes']}, ensure_ascii=False, indent=1))"
-    echo "--- action"; post /api/action '{"pane": "w1:p2", "text": "첫 줄\n  둘째 줄"}'
-    echo "--- action(없는 pane)"; post /api/action '{"pane": "w2:p1", "text": "x"}'
+    echo "--- action"; post /api/action "{\"pane\": \"$agent_pane\", \"text\": \"첫 줄\\n  둘째 줄\"}"
+    echo "--- action(없는 pane)"; post /api/action "{\"pane\": \"$missing_pane\", \"text\": \"x\"}"
     echo "--- hermes-new"; post /api/hermes-new '{"id": "issues/20261001-test.md", "text": "이슈 처리해 줘"}'
   } >> "$RESULT"
   { pkill -P "$server"; kill "$server"; wait "$server"; } 2>/dev/null
   {
-    echo "--- herdr (pane list 뺌)"; grep -v '^\["pane", "list"\]$' "$LOG"
-    echo "--- pane list 불림: $(grep -c '^\["pane", "list"\]$' "$LOG" | awk '{print ($1 > 0) ? "예" : "아니오"}')"
+    echo "--- herdr (pane list 뺌)"; grep -Ev '^\[("@studio", )?"pane", "list"\]$' "$LOG"
+    echo "--- pane list 불림: $(grep -Ec '^\[("@studio", )?"pane", "list"\]$' "$LOG" | awk '{print ($1 > 0) ? "예" : "아니오"}')"
   } >> "$RESULT"
 }
 
@@ -212,6 +219,8 @@ SCENARIOS=(board_new board_reuse board_nopane board_outside board_splitfail moni
   titled_board titled_monitor titled_learn titled_guide titled_layout titled_workspace_up titled_server)
 # 화면 계층 자체(scripts/screen) 검사 — 있으면 같이 돈다
 [ -f "$HERE/cli-scenarios.sh" ] && . "$HERE/cli-scenarios.sh"
+# studio 백엔드(가짜 데몬 CLI) — 같은 스크립트를 studio pane 안에서
+[ -f "$HERE/studio-scenarios.sh" ] && . "$HERE/studio-scenarios.sh"
 
 if [ "$MODE" = list ]; then printf '%s\n' "${SCENARIOS[@]}"; exit 0; fi
 [ "${#ONLY[@]}" -gt 0 ] && SCENARIOS=("${ONLY[@]}")

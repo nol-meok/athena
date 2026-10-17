@@ -44,7 +44,7 @@ else
     if [ -z "$PANE" ]; then
       # 부른 pane 옆을 나눈다(--target self) — 포커스된 pane 은 뒤에서 돌 때 엉뚱한 곳을 가른다
       OUT="$("$SCREEN" pane split --target self --direction down --ratio 0.25 --cwd "$ATHENA_DIR" --no-focus)" || {
-        echo "⚠️  herdr pane split 실패: $OUT" >&2; exit 1; }   # screen-lint: 안내 문구
+        echo "⚠️  $("$SCREEN" name) pane split 실패: $OUT" >&2; exit 1; }
       PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
       sleep 1
     fi
