@@ -675,7 +675,8 @@ const branchMatches = (workRef, branch) =>
 const collect = async () => {
   const now = Date.now()
   // archive 는 보드에서 치운 것 — 보이지 않는다
-  const plans = listFiles(join(ROOT, 'plans'), (path) => path.endsWith('.md') && !path.includes('/plans/archive/'))
+  // plans/setup/ 은 첫 실행 고르기 콘솔(scripts/setup-pick.mjs) — 작업 계획서가 아니라 칸반에 올리지 않는다(콘솔 주소 /plans/setup/*.html 은 그대로 열린다)
+  const plans = listFiles(join(ROOT, 'plans'), (path) => path.endsWith('.md') && !path.includes('/plans/archive/') && !path.includes('/plans/setup/'))
     .map(readPlan)
     .filter(Boolean)
     .filter((plan) => plan.column !== 'done' || now - plan.mtime < DONE_KEEP_DAYS * 86_400_000)
