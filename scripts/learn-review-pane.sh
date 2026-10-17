@@ -5,6 +5,7 @@
 # 어느 워크스페이스든 그 이름의 pane 이 이 체크아웃 폴더에서 떠 있으면 그 pane 을 쓰고(이미 돌고 있으면 그대로 · 빈 셸이면 다시 돌린다),
 # (다른 체크아웃의 같은 이름 pane 은 쓰지 않는다 — 대기열이 체크아웃마다 따로다)
 # 없으면 지금 pane 옆에 하나 띄운다. 표준출력은 pane id 한 줄. 화면 pane 밖이면 1 로 끝낸다(호출한 쪽이 뒤에서 돌린다).
+# Studio 화면에서도 pane 을 띄우지 않고 1 로 끝낸다 — 뒤에서 돈다(사용자 결정 2026-10-17: 스튜디오에는 배우기 검토 pane 을 두지 않는다)
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"
 LABEL="📚 배우기 검토"
@@ -14,7 +15,8 @@ SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 
 if ! "$SCREEN" inside; then
   exit 1
 fi
-eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다
+eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다 · SCREEN_BACKEND
+[ "${SCREEN_BACKEND:-}" = studio ] && exit 1
 
 # 이 이름이고 cwd(또는 지금 셸의 폴더)가 이 체크아웃인 pane
 PANE="$("$SCREEN" pane list --label "$LABEL" --cwd "$ATHENA_DIR" --format id 2>/dev/null)"
