@@ -5,7 +5,9 @@
 데몬 CLI(athena-studio-cli)·ATHENA_STUDIO_* 를 아는 건 StudioBackend 뿐이다
 (예외: herdr 플러그인 자체를 다루는 scripts/herdr-sidebar-*.sh — scripts/screen-lint.sh 허용 목록).
 
-백엔드 고르기 — ATHENA_SCREEN=herdr|studio|none, 없거나 auto 면 위에서부터(둘 다 켜 있어도 스크립트가 그대로 돈다 — 공존):
+백엔드 고르기 — ATHENA_SCREEN=herdr|studio|none → 없으면 이 아테나 폴더의 athena.config.json "screen"(같은 값 —
+  아테나를 화면마다 한 벌씩 둘 때 고정한다: herdr 용 ~/athena 는 herdr, Studio 전용 아테나는 studio) → 없거나 auto 면 위에서부터
+  (둘 다 켜 있어도 스크립트가 그대로 돈다 — 공존):
   1. HERDR_ENV=1 이거나 HERDR_PANE_ID 가 있다(herdr pane 안) → herdr
      (Studio 데몬은 pane 셸에서 HERDR_* 를 지운다 — 둘 다 있으면 Studio pane 안에서 켠 herdr 이고 안쪽인 herdr 가 맞다)
   2. ATHENA_STUDIO=1(Studio pane 안)                → studio
@@ -443,8 +445,20 @@ class HerdrBackend(Backend):
 BACKENDS = {'herdr': HerdrBackend, 'studio': StudioBackend, 'none': NoneBackend}
 
 
+def _configured_screen():
+    """이 아테나 폴더의 athena.config.json(이 컴퓨터 설정) "screen" — herdr·studio·none·auto 문자열만. 없거나 읽지 못하거나 다른 값이면 ''(자동)."""
+    config = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'athena.config.json')
+    try:
+        with open(config, encoding='utf-8') as config_file:
+            value = json.load(config_file).get('screen')
+    except (OSError, ValueError, AttributeError):
+        return ''
+    return value if value in ('herdr', 'studio', 'none', 'auto') else ''
+
+
 def backend_name():
-    name = os.environ.get('ATHENA_SCREEN', '') or 'auto'
+    # 환경 변수가 먼저(회귀 검사·한 번만 바꿀 때) → 이 아테나 폴더 설정(폴더마다 화면 고정) → 자동
+    name = os.environ.get('ATHENA_SCREEN', '') or _configured_screen() or 'auto'
     if name != 'auto':
         return name
     # 1) 화면 pane 안(그 백엔드가 넣어 준 환경 변수) · 2) pane 밖이면 떠 있는 Studio 데몬(접속 파일) · 3) herdr 명령
@@ -499,7 +513,7 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
   공통: --format json(기본) | id(첫 대상의 id 한 줄) | ids(한 줄에 하나)
-  백엔드: ATHENA_SCREEN=herdr|studio|none (기본 auto)"""
+  백엔드: ATHENA_SCREEN=herdr|studio|none → athena.config.json screen → auto"""
 
 VALUE_FLAGS = {'--format', '--has', '--tab', '--workspace', '--label', '--label-or-name', '--read-format', '--cwd', '--prefer-tab', '--prefer-workspace', '--pane',
                '--target', '--direction', '--ratio', '--env', '--split', '--lines', '--source', '--match', '--regex', '--timeout'}
