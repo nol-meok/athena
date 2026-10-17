@@ -550,13 +550,13 @@ const enqueue = (planArg, head) => {
       rmSync(launching, { force: true })
     }
   }
-  // pane 하나 — 이미 있으면 그 pane 에서 다시 돌리고, 없으면 띄운다(herdr 밖이면 뒤에서)
+  // pane 하나 — 이미 있으면 그 pane 에서 다시 돌리고, 없으면 띄운다(화면 pane 밖이면 뒤에서)
   const launched = spawnSync(join(ROOT, 'scripts/learn-review-pane.sh'), { encoding: 'utf8' })
   if (launched.status === 0) return console.log(`📚 배우기 검토 대기열에 넣었다 — pane ${launched.stdout.trim()}`)
   const logFd = openSync(LOG_FILE, 'a')
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--watch'], { detached: true, stdio: ['ignore', logFd, logFd] })
   child.unref()
-  console.log(`📚 배우기 검토를 뒤에서 시작했다(herdr 밖) — 기록 ${LOG_FILE}`)
+  console.log(`📚 배우기 검토를 뒤에서 시작했다(화면 pane 밖) — 기록 ${LOG_FILE}`)
 }
 
 // 실패한 일 — 몇 번 다시 해 보고(일시적인 claude·파일 오류), 그래도 안 되면 failed/ 에 이유와 함께 남긴다(지우지 않는다)

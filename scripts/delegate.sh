@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 에이전트를 **보이는 herdr pane** 에서 연다. 아테나가 Agent 도구(백그라운드) 대신 쓴다.
+# 에이전트를 **보이는 화면 pane**(herdr · Athena Studio — scripts/screen)에서 연다. 아테나가 Agent 도구(백그라운드) 대신 쓴다.
 #
 # **계획서 없이는 띄우지 않는다** — 모든 작업은 계획서 하나에 묶인다 (AGENTS.md 5절)
 #   --plan <plans/…md>          이미 있는 계획서(정식·경량)에 묶는다
@@ -147,7 +147,7 @@ WORKDIR="${WORKDIR:-$ATHENA_DIR}"
 WORKDIR="$(cd "$WORKDIR" && pwd)"
 
 if ! "$SCREEN" inside; then
-  echo "herdr 밖입니다. 직접 실행하세요:"
+  echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:"
   if [ -n "$PROMPT" ]; then echo "  (cd $WORKDIR && claude --agent $AGENT \"$PROMPT\")"
   else echo "  (cd $WORKDIR && claude --agent $AGENT)"; fi
   exit 1

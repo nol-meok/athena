@@ -54,15 +54,16 @@ $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_SCREEN=studio script
 --- stderr
 --- herdr
 $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_SCREEN=studio scripts/screen pane split --target self --direction down
---- exit 1
+--- exit 0
 --- stdout
+{"pane": {"id": "p9", "tab_id": "t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
 --- stderr
-{"error": "unsupported", "message": "studio 화면 백엔드는 아직 없다(③ Studio 에서 구현) — ATHENA_SCREEN 을 비우면 herdr 를 쓴다"}
 --- herdr
+["@studio", "pane", "split", "--target", "self", "--direction", "down"]
 $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_SCREEN=studio scripts/screen capabilities
 --- exit 0
 --- stdout
-{"backend": "studio", "features": []}
+{"backend": "studio", "features": ["agent-status", "process-info", "workspaces"]}
 --- stderr
 --- herdr
 $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_SCREEN=bogus scripts/screen self
@@ -93,6 +94,7 @@ $ scripts/screen
 사용: scripts/screen <동작> …   (결과는 납작한 JSON · 실패면 종료 코드 1 이상)
   self [--format json|sh]                      부른 pane(환경에서 — 서버에 묻지 않음) · sh 는 eval 용 SCREEN_* 변수
   inside                                       화면 pane 안이면 0
+  name                                         안내 글에 쓸 화면 이름 한 줄(herdr · Athena Studio · 화면 터미널…)
   capabilities [--has <기능>[,<기능>…]]          백엔드 기능 목록 · --has 는 다 있으면 0
   pane current                                 서버가 정한 지금 pane(self 와 다르다 — 환경이 없으면 포커스된 pane)
   pane list [--tab T] [--workspace W] [--label L] [--label-or-name L] [--cwd D] [--agent-only] [--prefer-tab T] [--prefer-workspace W]

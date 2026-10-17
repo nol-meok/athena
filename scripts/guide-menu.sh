@@ -34,7 +34,7 @@ ask_claude() { # ask_claude <프롬프트>  — 기존 아테나 pane 을 건드
     "$ATHENA_DIR/scripts/screen" pane rename "$new_pane" "아테나 작업" >/dev/null 2>&1 || true
     printf '%s✔ 새 pane(%s)에 아테나 세션을 띄워 실행했습니다:%s %s\n' "$GREEN" "$new_pane" "$RESET" "$1"
   else
-    printf '%sherdr 밖이거나 claude 명령이 없습니다. 채팅에 직접 붙여넣으세요:%s\n\n  %s\n' "$YELLOW" "$RESET" "$1"
+    printf '%s%s 밖이거나 claude 명령이 없습니다. 채팅에 직접 붙여넣으세요:%s\n\n  %s\n' "$YELLOW" "$("$ATHENA_DIR/scripts/screen" name)" "$RESET" "$1"
   fi
 }
 

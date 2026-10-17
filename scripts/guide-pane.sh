@@ -4,7 +4,7 @@
 #       scripts/guide-pane.sh <파일>     → 해당 파일을 less 로
 #
 # 우선순위
-#   1. 화면 pane 안(scripts/screen inside — herdr)이면 현재 pane 을 오른쪽으로 분할
+#   1. 화면 pane 안(scripts/screen inside — herdr · Athena Studio)이면 현재 pane 을 오른쪽으로 분할
 #   2. tmux 안이면 tmux split-window
 #   3. 둘 다 아니면 새 Ghostty 창으로 대체
 set -uo pipefail
@@ -35,7 +35,7 @@ if "$SCREEN" inside; then
   # 부른 pane 옆을 나눈다(--target self) — 포커스된 pane 은 뒤에서 돌 때 엉뚱한 곳을 가른다
   OUT="$("$SCREEN" pane split --target self --direction right --ratio 0.6 --cwd "$ATHENA_DIR" \
           --env "ATHENA_CLAUDE_PANE=${SCREEN_PANE_ID:-}" --no-focus)" || {
-    echo "⚠️  herdr pane split 실패: $OUT" >&2; exit 1; }   # screen-lint: 안내 문구
+    echo "⚠️  $("$SCREEN" name) pane split 실패: $OUT" >&2; exit 1; }
   NEW_PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
   sleep 1
   "$SCREEN" pane run "$NEW_PANE" "${CMD[@]}" >/dev/null

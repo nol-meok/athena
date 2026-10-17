@@ -9,10 +9,10 @@ sc_cli_self() {
   step - HERDR_PANE_ID=nocolon -- $S self
   step - "${IN[@]}" ATHENA_SCREEN=none -- $S self
   step - "${IN[@]}" ATHENA_SCREEN=none -- $S pane list
-  step - "${IN[@]}" ATHENA_SCREEN=studio -- $S self
-  step - "${IN[@]}" ATHENA_SCREEN=studio -- $S inside
-  step - "${IN[@]}" ATHENA_SCREEN=studio -- $S pane split --target self --direction down
-  step - "${IN[@]}" ATHENA_SCREEN=studio -- $S capabilities
+  step studio "${IN[@]}" ATHENA_SCREEN=studio -- $S self
+  step studio "${IN[@]}" ATHENA_SCREEN=studio -- $S inside
+  step studio "${IN[@]}" ATHENA_SCREEN=studio -- $S pane split --target self --direction down
+  step studio "${IN[@]}" ATHENA_SCREEN=studio -- $S capabilities
   step - "${IN[@]}" ATHENA_SCREEN=bogus -- $S self
   step - "${IN[@]}" -- $S capabilities
   step - "${IN[@]}" -- $S capabilities --has layout-geometry,pane-move
@@ -79,7 +79,7 @@ console.log(screenSync(['pane', 'current']).pane.id)
 process.env.ATHENA_SCREEN = 'studio'
 console.log(JSON.stringify(await screen(['pane', 'list'])))
 JS
-  step - "${IN[@]}" -- node "$WORK/node-check.mjs" "$COPY/scripts/lib/screen.mjs"
+  step studio "${IN[@]}" -- node "$WORK/node-check.mjs" "$COPY/scripts/lib/screen.mjs"
 }
 # 이름표·name·pane 제목은 따로 — --label 은 이름표만, --label-or-name 은 이름표 또는 name(board.sh)
 sc_cli_titled() {
